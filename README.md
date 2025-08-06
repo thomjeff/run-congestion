@@ -41,6 +41,15 @@ Example row:
 Full,29.03,37.00,Half,"Full return leg"
 ```
 
+## Prerequisites
+
+- **Python 3.8+** must be on your PATH as `python3`.
+- Install required libraries (globally or per-user):
+
+  ```bash
+  python3 -m pip install --user pandas numpy
+
+
 ## Usage
 
 Make the script executable (permissions issue encountered if omitted):
