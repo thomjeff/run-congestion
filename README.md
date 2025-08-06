@@ -1,4 +1,4 @@
-![alt text](/images/repo-image.png)
+![alt text](/images/repo-image.jpg)
 
 # Race Congestion Detection - README
 
