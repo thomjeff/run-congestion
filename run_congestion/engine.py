@@ -4,6 +4,7 @@ import numpy as np
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from typing import List, Dict, Tuple
 
+# Parse start_times from list of "Event=minutes" strings
 def parse_start_times(pairs: List[str]) -> Dict[str, float]:
     mapping = {}
     for p in pairs:
@@ -13,6 +14,7 @@ def parse_start_times(pairs: List[str]) -> Dict[str, float]:
         mapping[event.strip()] = float(val)
     return mapping
 
+# Convert minutes since midnight to "HH:MM:SS"
 def time_str_from_minutes(minutes: float) -> str:
     total_seconds = int(round(minutes * 60))
     hours = total_seconds // 3600
@@ -20,6 +22,7 @@ def time_str_from_minutes(minutes: float) -> str:
     secs = total_seconds % 60
     return f"{hours:02d}:{mins:02d}:{secs:02d}"
 
+# Core overlap detection for one segment
 def detect_segment_overlap(
     df: pd.DataFrame,
     prev_event: str,
@@ -37,14 +40,14 @@ def detect_segment_overlap(
     if prev_df.empty or curr_df.empty:
         return None
 
-    # Pre-filter based on arrival window endpoints
+    # Pre-filter by endpoints
     prev_start = start_prev_min + prev_df['pace'] * seg_start_km
     prev_end   = start_prev_min + prev_df['pace'] * seg_end_km
     curr_start = start_curr_min + curr_df['pace'] * seg_start_km
     curr_end   = start_curr_min + curr_df['pace'] * seg_end_km
 
-    mask = ((prev_end.values[:,None] >= curr_start.values[None,:]) &
-            (curr_end.values[None,:] >= prev_start.values[:,None]))
+    mask = ((prev_end.values[:, None] >= curr_start.values[None, :]) &
+            (curr_end.values[None, :] >= prev_start.values[:, None]))
     prev_keep = mask.any(axis=1)
     curr_keep = mask.any(axis=0)
     prev_df = prev_df.loc[prev_keep].reset_index(drop=True)
@@ -52,7 +55,7 @@ def detect_segment_overlap(
     if prev_df.empty or curr_df.empty:
         return None
 
-    # Coarse scan
+    # Coarse scan to find candidates
     coarse_step = step_km * coarse_factor
     coarse_kms = np.arange(seg_start_km, seg_end_km + 1e-9, coarse_step)
     prev_paces = prev_df['pace'].to_numpy()[:, None]
@@ -62,7 +65,8 @@ def detect_segment_overlap(
 
     candidates = [
         km for i, km in enumerate(coarse_kms)
-        if np.any(np.abs(prev_coarse[:,i][:,None] - curr_coarse[:,i][None,:]) * 60 <= time_window_secs)
+        if np.any(np.abs(prev_coarse[:, i][:, None] -
+                         curr_coarse[:, i][None, :]) * 60 <= time_window_secs)
     ]
     if not candidates:
         return {
@@ -78,10 +82,10 @@ def detect_segment_overlap(
             'unique_overlapping_pairs': 0
         }
 
-    # Build merged refine windows
+    # Merge refine ranges
     ranges = []
     for km in candidates:
-        low  = max(seg_start_km, km - coarse_step)
+        low = max(seg_start_km, km - coarse_step)
         high = min(seg_end_km, km + coarse_step)
         ranges.append((low, high))
     ranges.sort()
@@ -92,14 +96,14 @@ def detect_segment_overlap(
         else:
             merged.append((lo, hi))
 
-    # Refined steps
+    # Refine at full resolution
     refined = np.unique(np.concatenate([
         np.arange(lo, hi + 1e-9, step_km) for lo, hi in merged
     ]))
-
     prev_arr = start_prev_min + prev_paces * refined
     curr_arr = start_curr_min + curr_paces * refined
 
+    # Initialize metrics
     first_overlap = None
     cumulative_overlap_events = 0
     peak_congestion = 0
@@ -107,25 +111,31 @@ def detect_segment_overlap(
     peak_curr = set()
     unique_pairs = set()
 
+    # Detailed scan
     for idx, km in enumerate(refined):
         pt = prev_arr[:, idx]
         ct = curr_arr[:, idx]
-        diff = np.abs(pt[:,None] - ct[None,:]) * 60
+        diff = np.abs(pt[:, None] - ct[None, :]) * 60
         hits = np.argwhere(diff <= time_window_secs)
         if hits.size:
             cumulative_overlap_events += hits.shape[0]
             for pi, ci in hits:
-                unique_pairs.add((prev_df.iloc[pi]['runner_id'], curr_df.iloc[ci]['runner_id']))
-            ev = np.minimum(pt[:,None], ct[None,:])[hits[:,0], hits[:,1]]
+                unique_pairs.add((
+                    prev_df.iloc[pi]['runner_id'],
+                    curr_df.iloc[ci]['runner_id']
+                ))
+            ev = np.minimum(pt[:, None], ct[None, :])[hits[:,0], hits[:,1]]
             mi = np.argmin(ev)
             p_hit, c_hit = hits[mi]
             t_hit = ev[mi]
             if (first_overlap is None or
                 t_hit < first_overlap[0] or
                 (abs(t_hit - first_overlap[0]) < 1e-9 and km < first_overlap[1])):
-                first_overlap = (t_hit, km,
-                                 prev_df.iloc[p_hit]['runner_id'],
-                                 curr_df.iloc[c_hit]['runner_id'])
+                first_overlap = (
+                    t_hit, km,
+                    prev_df.iloc[p_hit]['runner_id'],
+                    curr_df.iloc[c_hit]['runner_id']
+                )
         if hits.size:
             prev_set = set(prev_df['runner_id'].iloc[hits[:,0]])
             curr_set = set(curr_df['runner_id'].iloc[hits[:,1]])
@@ -148,6 +158,7 @@ def detect_segment_overlap(
         'unique_overlapping_pairs': len(unique_pairs)
     }
 
+# Wrapper for each segment
 def _process_segment(
     df: pd.DataFrame,
     prev_event: str,
@@ -174,7 +185,6 @@ def _process_segment(
         seg_start, seg_end,
         time_window, step_km
     )
-
     if res is None:
         if verbose:
             lines.append(f"🟦 Overlap segment: {label}{' ('+desc+')' if desc else ''}")
@@ -220,6 +230,7 @@ def _process_segment(
 
     return lines, record
 
+# Main analysis function
 def analyze_overlaps(
     pace_csv: str,
     overlaps_csv: str,
@@ -234,24 +245,20 @@ def analyze_overlaps(
     df.columns = [c.strip().lower() for c in df.columns]
     overlaps.columns = [c.strip().lower() for c in overlaps.columns]
 
-    if not {'event','runner_id','pace','distance'}.issubset(df.columns):
+    if not {'event', 'runner_id', 'pace', 'distance'}.issubset(df.columns):
         raise ValueError('Pace CSV missing required columns.')
-    if not {'event','start','end','overlapswith'}.issubset(overlaps.columns):
+    if not {'event', 'start', 'end', 'overlapswith'}.issubset(overlaps.columns):
         raise ValueError('Overlaps CSV missing required columns.')
 
     tasks: List[Tuple] = []
-    for (pe, ce), grp in overlaps.groupby(['event','overlapswith']):
+    for (pe, ce), grp in overlaps.groupby(['event', 'overlapswith']):
         if pe not in start_times or ce not in start_times:
             continue
         sp, sc = start_times[pe], start_times[ce]
         for _, r in grp.iterrows():
-            tasks.append((
-                pe, ce, sp, sc,
-                float(r['start']), float(r['end']),
-                r.get('description','').strip(),
-                time_window, step_km, verbose
-            ))
+            tasks.append((pe, ce, sp, sc, float(r['start']), float(r['end']), r.get('description', '').strip(), time_window, step_km, verbose))
 
+    # Choose executor based on environment variable
     executor_cls = ThreadPoolExecutor if os.environ.get("VERCEL") else ProcessPoolExecutor
 
     lines: List[str] = []
@@ -271,9 +278,11 @@ def analyze_overlaps(
     key = 'intensity' if rank_by == 'intensity' else 'peak_congestion_ratio'
     summary_df = summary_df.sort_values(by=key, ascending=False).reset_index(drop=True)
 
-    lines.append("🗂️ Interaction Intensity Summary — ranked by " +
-                 ("cumulative intensity" if rank_by=='intensity' else
-                  "peak congestion ratio (acute bottlenecks)") + ":")
+    lines.append(
+        "🗂️ Interaction Intensity Summary — ranked by " +
+        ("cumulative intensity" if rank_by == 'intensity' else
+         "peak congestion ratio (acute bottlenecks)") + ":"
+    )
     for i, row in summary_df.iterrows():
         suffix = f" ({row['description']})" if row['description'] else ''
         lines.append(
