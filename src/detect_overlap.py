@@ -5,7 +5,6 @@ import pandas as pd
 import numpy as np
 import time
 from datetime import datetime, timezone
-from datetime import datetime, timezone
 import os
 
 DEFAULT_TIME_WINDOW_SECONDS = 60
@@ -237,15 +236,22 @@ def main():
                   f"Intensity={row['intensity']:,}, DistinctPairs={row['distinct_pairs']:,}")
         print()
 
-        if args.export_summary:
-            summary_df.to_csv(args.export_summary, index=False)
-            print(f"✅ Wrote summary CSV to {args.export_summary}")
-            # prefix the filename with the generation timestamp
-            now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-            base, ext = os.path.splitext(args.export_summary)
-            out_filename = f"{now_str}_{base}{ext}"
-            summary_df.to_csv(out_filename, index=False)
-            print(f"✅ Wrote summary CSV to {out_filename}")
+    if args.export_summary:
+        # build a clean timestamp prefix
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%S")
+
+        # figure out where to write: use provided dir or default to 'examples'
+        provided = args.export_summary
+        base, ext = os.path.splitext(os.path.basename(provided))
+        directory = os.path.dirname(provided) or "examples"
+        os.makedirs(directory, exist_ok=True)
+
+        # final filename: e.g. '2025-08-06T133027_summary.csv'
+        out_filename = os.path.join(directory, f"{now_str}_{base}{ext or '.csv'}")
+
+        # write only the dated file
+        summary_df.to_csv(out_filename, index=False)
+        print(f"✅ Wrote summary CSV to {out_filename}")    
 
 if __name__ == "__main__":
     main()
