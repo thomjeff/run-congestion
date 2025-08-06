@@ -5,6 +5,8 @@ import pandas as pd
 import numpy as np
 import time
 from datetime import datetime, timezone
++from datetime import datetime, timezone
++import os
 
 DEFAULT_TIME_WINDOW_SECONDS = 60
 DEFAULT_STEP_KM = 0.01
@@ -238,6 +240,12 @@ def main():
         if args.export_summary:
             summary_df.to_csv(args.export_summary, index=False)
             print(f"✅ Wrote summary CSV to {args.export_summary}")
++           # prefix the filename with the generation timestamp
++           now_str = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
++           base, ext = os.path.splitext(args.export_summary)
++           out_filename = f"{now_str}_{base}{ext}"
++           summary_df.to_csv(out_filename, index=False)
++           print(f"✅ Wrote summary CSV to {out_filename}")
 
 if __name__ == "__main__":
     main()
