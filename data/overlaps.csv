@@ -1,0 +1,8 @@
+event,start,end,overlapswith,description
+10K,0,2.74,Half,Start to Friel
+10K,5.81,8.1,Half,Friel to Station/Barker
+Full,0,4.25,10K,Full start to 10K turn
+Full,16,20.52,10K,Full/10K Friel to Queen Sq. Loop
+Full,23.24,29.03,Half,Barker/Station to McGloin via Gibson
+Full,29.03,37,Half,Bridge/Mill to/back Tree Farm
+Full,37,42.2,Half,Bridge/Mill to Finish
