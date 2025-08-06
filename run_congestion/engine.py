@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import numpy as np
 from datetime import datetime, timezone
-import concurrent.futures
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import List, Dict, Tuple
 
 def parse_start_times(pairs):
@@ -53,6 +53,7 @@ def detect_segment_overlap(
     if prev_df.empty or curr_df.empty:
         return None
 
+    # Compute arrival times via broadcasting
     steps = np.arange(seg_start_km, seg_end_km + 1e-9, step_km)
     prev_paces = prev_df['pace'].to_numpy()[:, None]
     curr_paces = curr_df['pace'].to_numpy()[:, None]
@@ -75,7 +76,8 @@ def detect_segment_overlap(
         if hits.size:
             cumulative_overlap_events += hits.shape[0]
             for p_idx, c_idx in hits:
-                unique_pairs.add((prev_df.iloc[p_idx]['runner_id'], curr_df.iloc[c_idx]['runner_id']))
+                unique_pairs.add((prev_df.iloc[p_idx]['runner_id'],
+                                  curr_df.iloc[c_idx]['runner_id']))
             ev_times = np.minimum(prev_times[:, None], curr_times[None, :])[hits[:,0], hits[:,1]]
             idx = np.argmin(ev_times)
             p_idx, c_idx = hits[idx]
@@ -83,7 +85,9 @@ def detect_segment_overlap(
             if (first_overlap is None or
                 event_time < first_overlap[0] or
                 (abs(event_time - first_overlap[0]) < 1e-6 and km < first_overlap[1])):
-                first_overlap = (event_time, km, prev_df.iloc[p_idx]['runner_id'], curr_df.iloc[c_idx]['runner_id'])
+                first_overlap = (event_time, km,
+                                 prev_df.iloc[p_idx]['runner_id'],
+                                 curr_df.iloc[c_idx]['runner_id'])
         if hits.size:
             prev_set = set(prev_df['runner_id'].iloc[hits[:,0]])
             curr_set = set(curr_df['runner_id'].iloc[hits[:,1]])
@@ -192,8 +196,7 @@ def analyze_overlaps(
     if not {'event','start','end','overlapswith'}.issubset(overlaps.columns):
         raise ValueError('Overlaps CSV missing required columns.')
 
-    # Prepare segment tasks
-    tasks = []
+    tasks: List[Tuple] = []
     for (prev_event, curr_event), grp in overlaps.groupby(['event','overlapswith']):
         if prev_event not in start_times or curr_event not in start_times:
             continue
@@ -205,24 +208,23 @@ def analyze_overlaps(
                           row.get('description','').strip(),
                           time_window, step_km, verbose))
 
-    # Run in parallel threads
+    # Parallel execution of segments
     lines: List[str] = []
     all_records: List[Dict] = []
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with ProcessPoolExecutor() as executor:
         futures = [
             executor.submit(_process_segment, df,
                             prev, curr, sp, sc, ss, se, desc,
                             time_window, step_km, verbose)
-            for (prev, curr, sp, sc, ss, se, desc, _, _, verbose)
+            for (prev, curr, sp, sc, ss, se, desc, _, _, _)
             in tasks
         ]
-        for future in concurrent.futures.as_completed(futures):
+        for future in as_completed(futures):
             seg_lines, record = future.result()
             lines.extend(seg_lines)
             if record:
                 all_records.append(record)
 
-    # Build summary
     if not all_records:
         return "No overlapping segments processed.", []
 
