@@ -10,10 +10,9 @@ from run_congestion.engine import analyze_overlaps, parse_start_times
 def app(environ, start_response):
     try:
         # Only POST allowed
-        method = environ.get("REQUEST_METHOD", "")
-        if method != "POST":
+        if environ.get("REQUEST_METHOD") != "POST":
             start_response("405 Method Not Allowed", [("Allow", "POST")])
-            return [b""]
+            return [b"Method Not Allowed"]
 
         # Read JSON body
         try:
@@ -24,7 +23,6 @@ def app(environ, start_response):
             start_response("400 Bad Request", [("Content-Type", "text/plain")])
             return [f"Invalid JSON: {ex}".encode()]
 
-        # Extract parameters
         pace_src     = payload.get("paceCsv")
         overlaps_src = payload.get("overlapsCsv")
         start_times  = payload.get("startTimes")
@@ -35,10 +33,10 @@ def app(environ, start_response):
 
         if not (pace_src and overlaps_src and start_times):
             start_response("400 Bad Request", [("Content-Type", "text/plain")])
-            return [b"Missing required fields"]
+            return [b"Missing required fields: paceCsv, overlapsCsv, startTimes"]
 
-        # Helper: fetch or decode CSV into temp file
-        def _fetch_csv(src: str, suffix: str) -> str:
+        # Fetch or decode CSVs into temp files
+        def _fetch_csv(src, suffix):
             tf = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
             path = tf.name
             try:
@@ -48,19 +46,17 @@ def app(environ, start_response):
                     tf.write(base64.b64decode(src))
             finally:
                 tf.close()
-            # Validate file
-            size = os.path.getsize(path)
-            if size == 0:
+            if os.path.getsize(path) == 0:
                 raise IOError(f"Fetched file is empty: {path}")
             return path
 
-        pace_path = _fetch_csv(pace_src, ".csv")
+        pace_path     = _fetch_csv(pace_src, ".csv")
         overlaps_path = _fetch_csv(overlaps_src, ".csv")
 
         if isinstance(start_times, list):
             start_times = parse_start_times(start_times)
 
-        # Run the core analysis
+        # Run the engine
         report_text, summary = analyze_overlaps(
             pace_path, overlaps_path, start_times,
             time_window=time_window,
@@ -76,13 +72,11 @@ def app(environ, start_response):
         except OSError:
             pass
 
-        # Respond JSON
-        start_response("200 OK", [("Content-Type", "application/json")])
-        response = {"success": True, "reportText": report_text, "summary": summary}
-        return [json.dumps(response).encode("utf-8")]
+        # Return plain-text report
+        start_response("200 OK", [("Content-Type", "text/plain; charset=utf-8")])
+        return [report_text.encode("utf-8")]
 
     except Exception:
         tb = traceback.format_exc()
-        start_response("500 Internal Server Error", [("Content-Type", "application/json")])
-        error_body = {"success": False, "error": "Server error", "trace": tb}
-        return [json.dumps(error_body).encode("utf-8")]
+        start_response("500 Internal Server Error", [("Content-Type", "text/plain")])
+        return [f"Server error:\n{tb}".encode("utf-8")]
