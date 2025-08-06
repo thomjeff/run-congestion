@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 import numpy as np
-from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from typing import List, Dict, Tuple
 
@@ -180,7 +179,7 @@ def _process_segment(
         if verbose:
             lines.append(f"🟦 Overlap segment: {label}{' ('+desc+')' if desc else ''}")
             lines.append(f"👥 Total in '{curr_event}': 0 runners")
-            lines.append(f"👥 Total in '{prev_event}': 0.runners")
+            lines.append(f"👥 Total in '{prev_event}': 0 runners")
             lines.append("✅ No overlap detected between events in this segment.")
             lines.append("")
         return lines, {}
@@ -253,7 +252,6 @@ def analyze_overlaps(
                 time_window, step_km, verbose
             ))
 
-    # Choose executor based on environment (VERCEL uses threads to avoid semaphores)
     executor_cls = ThreadPoolExecutor if os.environ.get("VERCEL") else ProcessPoolExecutor
 
     lines: List[str] = []
