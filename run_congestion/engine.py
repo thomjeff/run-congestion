@@ -26,6 +26,7 @@ def detect_segment_overlap(
     time_window_secs=60,
     step_km=0.01
 ):
+    # Filter dataframes by event
     prev_df = df[df['event'] == prev_event].copy().reset_index(drop=True)
     curr_df = df[df['event'] == curr_event].copy().reset_index(drop=True)
     if prev_df.empty or curr_df.empty:
@@ -51,9 +52,14 @@ def detect_segment_overlap(
     if prev_df.empty or curr_df.empty:
         return None
 
+    # Compute steps
     steps = np.arange(seg_start_km, seg_end_km + 1e-9, step_km)
-    prev_arr = np.array([start_prev_min + row['pace'] * steps for _, row in prev_df.iterrows()])
-    curr_arr = np.array([start_curr_min + row['pace'] * steps for _, row in curr_df.iterrows()])
+
+    # Vectorized arrival times: broadcasting
+    prev_paces = prev_df['pace'].to_numpy()[:, None]  # shape (n_prev, 1)
+    curr_paces = curr_df['pace'].to_numpy()[:, None]  # shape (n_curr, 1)
+    prev_arr = start_prev_min + prev_paces * steps      # shape (n_prev, n_steps)
+    curr_arr = start_curr_min + curr_paces * steps     # shape (n_curr, n_steps)
 
     first_overlap = None
     cumulative_overlap_events = 0
@@ -71,14 +77,18 @@ def detect_segment_overlap(
         if hits.size:
             cumulative_overlap_events += hits.shape[0]
             for p_idx, c_idx in hits:
-                unique_pairs.add((prev_df.iloc[p_idx]['runner_id'], curr_df.iloc[c_idx]['runner_id']))
-            # first overlap
+                unique_pairs.add((prev_df.iloc[p_idx]['runner_id'],
+                                  curr_df.iloc[c_idx]['runner_id']))
             ev_times = np.minimum(prev_times[:, None], curr_times[None, :])[hits[:,0], hits[:,1]]
             idx = np.argmin(ev_times)
             p_idx, c_idx = hits[idx]
             event_time = ev_times[idx]
-            if first_overlap is None or event_time < first_overlap[0] or (abs(event_time - first_overlap[0]) < 1e-6 and km < first_overlap[1]):
-                first_overlap = (event_time, km, prev_df.iloc[p_idx]['runner_id'], curr_df.iloc[c_idx]['runner_id'])
+            if (first_overlap is None or
+                event_time < first_overlap[0] or
+                (abs(event_time - first_overlap[0]) < 1e-6 and km < first_overlap[1])):
+                first_overlap = (event_time, km,
+                                 prev_df.iloc[p_idx]['runner_id'],
+                                 curr_df.iloc[c_idx]['runner_id'])
         if hits.size:
             prev_set = set(prev_df['runner_id'].iloc[hits[:,0]])
             curr_set = set(curr_df['runner_id'].iloc[hits[:,1]])
@@ -111,8 +121,8 @@ def analyze_overlaps(
     df.columns = [c.strip().lower() for c in df.columns]
     overlaps.columns = [c.strip().lower() for c in overlaps.columns]
 
-    req = {'event','runner_id','pace','distance'}
-    if not req.issubset(df.columns):
+    required_pace = {'event','runner_id','pace','distance'}
+    if not required_pace.issubset(df.columns):
         raise ValueError('Pace CSV missing required columns.')
     if not {'event','start','end','overlapswith'}.issubset(overlaps.columns):
         raise ValueError('Overlaps CSV missing required columns.')
@@ -126,69 +136,76 @@ def analyze_overlaps(
         start_prev = start_times[prev_event]
         start_curr = start_times[curr_event]
         for _, row in grp.iterrows():
-            seg_start = float(row['start']); seg_end = float(row['end'])
+            seg_start = float(row['start'])
+            seg_end   = float(row['end'])
             desc = row.get('description','').strip()
-            label = f"{seg_start:.2f}km–{seg_end:.2f}km"
+            segment_label = f"{seg_start:.2f}km–{seg_end:.2f}km"
             if verbose:
-                lines.append(f"🔍 Checking {prev_event} vs {curr_event} from {label}...")
-                if desc: lines.append(f"📝 Segment: {desc}")
-            res = detect_segment_overlap(df, prev_event, curr_event,
-                                         start_prev, start_curr,
-                                         seg_start, seg_end,
-                                         time_window, step_km)
-            if res is None:
+                lines.append(f"🔍 Checking {prev_event} vs {curr_event} from {segment_label}...")
+                if desc:
+                    lines.append(f"📝 Segment: {desc}")
+            result = detect_segment_overlap(
+                df, prev_event, curr_event,
+                start_prev, start_curr,
+                seg_start, seg_end,
+                time_window, step_km
+            )
+            if result is None:
                 if verbose:
-                    lines.append(f"🟦 Overlap segment: {label} ({desc})" if desc else f"🟦 Overlap segment: {label}")
+                    lines.append(f"🟦 Overlap segment: {segment_label}{' ('+desc+')' if desc else ''}")
                     lines.append(f"👥 Total in '{curr_event}': 0 runners")
                     lines.append(f"👥 Total in '{prev_event}': 0 runners")
                     lines.append("✅ No overlap detected between events in this segment.")
                     lines.append("")
                 continue
 
-            intensity = res['cumulative_overlap_events']
-            length = max(1e-9, seg_end - seg_start)
-            intensity_per_km = intensity / length
-            peak_ratio = res['peak_congestion'] / (res['total_prev'] + res['total_curr'])
+            intensity = result['cumulative_overlap_events']
+            seg_len = max(1e-9, seg_end - seg_start)
+            intensity_per_km = intensity / seg_len
+            peak_ratio = result['peak_congestion'] / (result['total_prev'] + result['total_curr'])
 
             record = {
-                'prev_event': prev_event, 'curr_event': curr_event,
-                'segment': label, 'description': desc,
+                'prev_event': prev_event,
+                'curr_event': curr_event,
+                'segment': segment_label,
+                'description': desc,
                 'intensity': intensity,
                 'intensity_per_km': intensity_per_km,
-                'distinct_pairs': res['unique_overlapping_pairs'],
-                'peak_congestion': res['peak_congestion'],
+                'distinct_pairs': result['unique_overlapping_pairs'],
+                'peak_congestion': result['peak_congestion'],
                 'peak_congestion_ratio': peak_ratio,
-                'total_prev': res['total_prev'], 'total_curr': res['total_curr'],
-                'first_overlap_time': time_str_from_minutes(res['first_overlap'][0]) if res['first_overlap'] else '',
-                'first_overlap_km': f"{res['first_overlap'][1]:.2f}" if res['first_overlap'] else ''
+                'total_prev': result['total_prev'],
+                'total_curr': result['total_curr'],
+                'first_overlap_time': time_str_from_minutes(result['first_overlap'][0]) if result['first_overlap'] else '',
+                'first_overlap_km': f"{result['first_overlap'][1]:.2f}" if result['first_overlap'] else ''
             }
             all_results.append(record)
 
             if verbose:
-                lines.append(f"🟦 Overlap segment: {label} ({desc})" if desc else f"🟦 Overlap segment: {label}")
+                lines.append(f"🟦 Overlap segment: {segment_label}{' ('+desc+')' if desc else ''}")
                 lines.append(f"👥 Total in '{curr_event}': {record['total_curr']} runners")
                 lines.append(f"👥 Total in '{prev_event}': {record['total_prev']} runners")
                 if record['first_overlap_time']:
-                    lines.append(f"⚠️ First overlap at {record['first_overlap_time']} at {record['first_overlap_km']}km -> {prev_event} Bib: {res['first_overlap'][2]}, {curr_event} Bib: {res['first_overlap'][3]}")
+                    lines.append(f"⚠️ First overlap at {record['first_overlap_time']} at {record['first_overlap_km']}km -> {prev_event} Bib: {result['first_overlap'][2]}, {curr_event} Bib: {result['first_overlap'][3]}")
                 else:
                     lines.append("✅ No overlap detected between events in this segment.")
                 lines.append(f"📈 Interaction Intensity over segment: {intensity:,} (cumulative overlap events)")
-                lines.append(f"🔥 Peak congestion: {res['peak_congestion']} total runners at best step ( {len(res['peak_prev_at_peak'])} from '{prev_event}', {len(res['peak_curr_at_peak'])} from '{curr_event}' )")
-                lines.append(f"🔁 Unique Pairs: {res['unique_overlapping_pairs']:,} (cross-bib relationships)")
+                lines.append(f"🔥 Peak congestion: {result['peak_congestion']} total runners at best step ( {len(result['peak_prev_at_peak'])} from '{prev_event}', {len(result['peak_curr_at_peak'])} from '{curr_event}' )")
+                lines.append(f"🔁 Unique Pairs: {result['unique_overlapping_pairs']:,} (cross-bib relationships)")
                 lines.append("")
 
     if not all_results:
         return "No overlapping segments processed.", []
 
-    df_sum = pd.DataFrame(all_results)
-    key = 'intensity' if rank_by=='intensity' else 'peak_congestion_ratio'
-    df_sum = df_sum.sort_values(by=key, ascending=False).reset_index(drop=True)
+    summary_df = pd.DataFrame(all_results)
+    sort_key = 'intensity' if rank_by == 'intensity' else 'peak_congestion_ratio'
+    summary_df = summary_df.sort_values(by=sort_key, ascending=False).reset_index(drop=True)
 
     lines.append("🗂️ Interaction Intensity Summary — ranked by " +
                  ("cumulative intensity" if rank_by=='intensity' else "peak congestion ratio (acute bottlenecks)") + ":")
-    for i, row in df_sum.iterrows():
-        suffix = f" ({row['description']})" if row['description'] else ''
-        lines.append(f"{i+1:02d}. {row['prev_event']} vs {row['curr_event']} {row['segment']}{suffix}: PeakRatio={row['peak_congestion_ratio']:.2%}, Peak={row['peak_congestion']}, Intensity/km={row['intensity_per_km']:.1f}, Intensity={row['intensity']:,}, DistinctPairs={row['distinct_pairs']:,}")
+    for idx, row in summary_df.iterrows():
+        desc_suffix = f" ({row['description']})" if row['description'] else ''
+        lines.append(f"{idx+1:02d}. {row['prev_event']} vs {row['curr_event']} {row['segment']}{desc_suffix}: PeakRatio={row['peak_congestion_ratio']:.2%}, Peak={row['peak_congestion']}, Intensity/km={row['intensity_per_km']:.1f}, Intensity={row['intensity']:,}, DistinctPairs={row['distinct_pairs']:,}")
 
-    report = "\n".join(lines)
-    return report, all_results
+    report_text = "\n".join(lines)
+    return report_text, all_results
