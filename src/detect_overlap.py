@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
+import argparse
 import os
 import sys
-
-# Ensure parent directory is on PYTHONPATH so run_congestion package is importable
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-import argparse
+import time
 from datetime import datetime, timezone
 import pandas as pd
+
+# Ensure run_congestion package is on PYTHONPATH
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from run_congestion.engine import analyze_overlaps, parse_start_times
 
@@ -43,6 +43,9 @@ def main():
     # Parse start times into a mapping
     start_times = parse_start_times(args.start_times)
 
+    # Benchmark start
+    bench_start = time.time()
+
     # Run core analysis
     report_text, summary = analyze_overlaps(
         args.pace_csv,
@@ -67,6 +70,11 @@ def main():
         df = pd.DataFrame(summary)
         df.to_csv(out_filename, index=False)
         print(f"✅ Wrote summary CSV to {out_filename}")
+
+    # Benchmark end
+    bench_end = time.time()
+    elapsed = bench_end - bench_start
+    print(f"⏱ Total computation time: {elapsed:.2f} seconds")
 
 if __name__ == "__main__":
     main()
