@@ -95,7 +95,6 @@ def detect_segment_overlap(
     prev_arr = start_prev_min + prev_df['pace'].to_numpy()[:, None] * refined
     curr_arr = start_curr_min + curr_df['pace'].to_numpy()[:, None] * refined
 
-    # Scan refined
     first_overlap = None
     cum_events = 0
     peak_cong = 0
@@ -113,9 +112,7 @@ def detect_segment_overlap(
             t_hit = ev[mi]
             p_hit, c_hit = hits[mi]
             if first_overlap is None or t_hit < first_overlap[0]:
-                first_overlap = (t_hit, km,
-                                 prev_df.iloc[p_hit]['runner_id'],
-                                 curr_df.iloc[c_hit]['runner_id'])
+                first_overlap = (t_hit, km, prev_df.iloc[p_hit]['runner_id'], curr_df.iloc[c_hit]['runner_id'])
             tot = len(set(prev_df['runner_id'].iloc[hits[:,0]])) + len(set(curr_df['runner_id'].iloc[hits[:,1]]))
             peak_cong = max(peak_cong, tot)
 
@@ -156,14 +153,18 @@ def analyze_overlaps(
         if pe in start_times and ce in start_times:
             sp, sc = start_times[pe], start_times[ce]
             for _, row in grp.iterrows():
-                tasks.append((pe, ce, sp, sc, float(row['start']), float(row['end']), row.get('description','')))
+                tasks.append((
+                    pe, ce, sp, sc,
+                    float(row['start']), float(row['end']),
+                    row.get('description',''),
+                    time_window, step_km, verbose
+                ))
 
     executor_cls = ThreadPoolExecutor if os.environ.get('VERCEL') else ProcessPoolExecutor
 
     lines = []
     records = []
     with executor_cls() as executor:
-        # Use correct function name here
         futures = [executor.submit(_process_segment, df, *t) for t in tasks]
         for f in as_completed(futures):
             lines_segment, rec = f.result()
@@ -171,5 +172,5 @@ def analyze_overlaps(
             if rec:
                 records.append(rec)
 
-    # summary build omitted
+    # Build summary omitted
     return "\n".join(lines), records
