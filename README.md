@@ -46,9 +46,9 @@ Full,29.03,37.00,Half,"Full return leg"
 - **Python 3.8+** must be on your PATH as `python3`.
 - Install required libraries (globally or per-user):
 
-  ```bash
-  python3 -m pip install --user pandas numpy
-
+```bash
+python3 -m pip install --user pandas numpy
+```
 
 ## Usage
 
