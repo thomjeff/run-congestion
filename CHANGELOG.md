@@ -1,25 +1,20 @@
 # Changelog
 
-## [v1.0.0] – 2025-08-06
-
+## [1.1.0] - 2025-08-06
 ### Added
-- **`detect_overlap.py`**: Core engine with fully vectorized overlap‐detection, delivering scale-resilient performance across large field sizes.  
-- **Enhanced CLI**:  
-  - `--rank-by` flag to toggle ranking by cumulative **Intensity** or **Peak Ratio** (acute bottlenecks).  
-  - `--export-summary` to emit a timestamp-prefixed CSV with embedded metadata (`start_times`, `time_window`, `step`, `generated_at`).  
-- **Metrics & Reporting**: Outputs per-segment  
-  - **Intensity**, **Intensity/km**, **Peak Congestion**, **Peak Ratio**, **DistinctPairs**  
-  - First-overlap context (time, km, runner IDs) and per-segment runtime.  
-- **Documentation**:  
-  - Comprehensive **README.md** covering overview, definitions, usage, prerequisites, troubleshooting, and dashboard ingestion.  
-  - **CHANGELOG.md** established for release tracking.  
-- **Excel Artifacts**:  
-  - `summary_template.xlsx` (import template + formula guidance)  
-  - `summary_dashboard.xlsx` (prebuilt dashboard with bar and scatter charts)
+- Benchmark timing output: prints total computation time after analysis.
+- Pre-filter optimization to eliminate non-overlapping runners before step scanning.
+- NumPy broadcasting for vectorized arrival-time matrix computation, replacing Python loops.
+- True multi-core parallelism via `ProcessPoolExecutor` in `engine.py`.
+- Two-phase adaptive stepping (coarse + refined) to minimize detailed scanning steps.
+- `--rank-by` CLI flag to choose summary ranking by `peak_ratio` (default) or `intensity`.
+- Timestamped CSV export via `--export-summary <path>`, stored in `examples/` by default.
 
 ### Changed
-- **Removed** JSONL export (`--export-json`) to simplify downstream ingestion (CSV only).
+- Refactored `detect_overlap.py` to include timing, ranking, and export functionality.
+- Updated `engine.py` with performance optimizations while preserving existing CLI output.
+- README updated with new usage instructions and examples.
 
-### Next Steps
-- Evaluate acute bottlenecks via `--rank-by peak_ratio`.  
-- Leverage provided templates for rapid reporting and executive insight.  
+### Fixed
+- Removed unused JSONL export option.
+- Clarified file permission instructions (`chmod +x detect_overlap.py`).
