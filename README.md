@@ -1,11 +1,15 @@
 # Race Congestion Detection Suite
 
-A modular Python toolkit to analyze and mitigate on-course congestion among running events.  
+A modular Python toolkit to analyze and mitigate on-course congestion among running events.
 
-This release (v1.1.0) introduces major performance optimizations and new CLI features while maintaining backward-compatible output formats.
+This release (**v1.1.1**) builds upon v1.1.0 with:
+- **Vercel API Deployment Enhancements**: Ensured compatibility for serverless execution with configurable `stepKm` for balancing accuracy and execution time.
+- **Granularity Guidance**: Benchmarked limits for step sizes to avoid timeouts in hosted environments.
+- **Improved Verbose Output**: Local and API executions now share consistent formatting and detail.
+- **Codebase Cleanup**: Removed unused imports and redundant logic for stability in cloud runtimes.
+- **README & Changelog Updates**: Expanded documentation to explain concepts and input formats.
 
-## Features (v1.1.0)
-
+## Features (v1.1.0 + v1.1.1)
 - **Benchmark timing**: Total computation time printed after analysis.
 - **Pre-filter optimization**: Quickly exclude runners with non-overlapping arrival windows.
 - **NumPy broadcasting**: Vectorized arrival-time matrix computation for speed.
@@ -15,54 +19,73 @@ This release (v1.1.0) introduces major performance optimizations and new CLI fea
   - `--rank-by` flag (`peak_ratio` or `intensity`)
   - `--export-summary <file>` writes a timestamped CSV (e.g. `2025-08-06T204130_summary.csv`)
   - `--time-window` and `--step` remain to control tolerance and resolution.
+- **Vercel-ready API endpoint** for integration with web front-ends.
+
+## Key Concepts
+### StepKm
+- **Definition**: The distance increment (in kilometers) at which the algorithm samples and checks for runner overlaps.
+- **Impact**: Smaller `stepKm` values (e.g., `0.01`) provide more precise detection but increase computation time.
+- **Guidance**: In Vercel (300s timeout limit), `0.03` was found to be the practical minimum for large datasets. Locally, smaller values can be used.
+
+### Coarse Factor
+- **Definition**: A multiplier applied during the first-pass "coarse" scan to quickly identify likely overlap zones before detailed analysis.
+- **Impact**: Higher values reduce coarse scan resolution (faster but less precise). The fine scan still ensures accuracy where overlaps are found.
+- **Use Case**: Adjust for performance tuning when analyzing extremely large events or many segments.
+
+## Data Inputs
+### Pace CSV
+- **Purpose**: Contains the individual runner pacing and bib data.
+- **Format**: Must include columns for `bib`, `event`, and `pace` (plus any timing fields used in calculations).
+
+### Overlaps CSV
+```csv
+event,start,end,overlapsWith,description
+10K,0.00,2.74,Half,"Start to Friel"
+10K,5.81,8.10,Half,"Friel to Station/Barker"
+Full,16.00,20.52,10K,"Full/10K Friel to Queen Sq. Loop"
+```
+- **event**: The earlier-starting event.
+- **start**, **end**: kilometer range for overlap.
+- **overlapsWith**: the later event.
+- **description**: human-readable segment name.
 
 ## Installation
-
 ```bash
 git clone https://github.com/<username>/run-congestion.git
 cd run-congestion
 chmod +x src/detect_overlap.py
 pip install -r requirements.txt
 ```
+> Requires Python 3.8+ and pandas, numpy.
 
-> **Note:** Requires Python 3.8+ and pandas, numpy.
-
-## Overlaps CSV Format
-
-Your `overlaps.csv` should have columns:
-
-```csv
-event,start,end,overlapsWith,description
-10K,0.00,2.74,Half,"Start to Friel"
-10K,5.81,8.10,Half,"Friel to Station/Barker"
-Full,16.00,20.52,10K,"Full/10K Friel to Queen Sq. Loop"
-...
-```
-
-- **event**: The earlier-starting event.
-- **start**, **end**: kilometer range for overlap.
-- **overlapsWith**: the later event.
-- **description**: human-readable segment name.
-
-## Usage
-
+## CLI Usage
 ```bash
 ./src/detect_overlap.py data/your_pace_data.csv data/overlaps.csv   --start-times Full=420 10K=440 Half=460   --time-window 60   --step 0.01   --rank-by peak_ratio   --verbose   --export-summary summary.csv
 ```
-
-- The script will print per-segment details and a ranked interaction summary.
+- Prints per-segment details and a ranked interaction summary.
 - Summary CSV is written to `examples/<timestamp>_summary.csv`.
 
-## Performance Tips
+## API Usage (Vercel)
+POST to `/api/overlap` with JSON:
+```json
+{
+  "paceCsv": "https://.../your_pace_data.csv",
+  "overlapsCsv": "https://.../overlaps.csv",
+  "startTimes": {"Full": 420, "10K": 440, "Half": 460},
+  "timeWindow": 60,
+  "stepKm": 0.03,
+  "verbose": true,
+  "rankBy": "peak_ratio"
+}
+```
 
-- Default `step=0.01` (10 m) and `time-window=60` s balance detail and speed.
-- For extremely long segments, consider increasing `coarse_factor` in code.
-- To further reduce runtime, integrate Numba JIT or full-array 3D mask scanning.
+## Performance Tips
+- Default `step=0.01` and `time-window=60` balance detail and speed locally.
+- Use `stepKm=0.03` for Vercel to avoid timeouts.
+- Adjust `coarse_factor` in code for large-scale datasets.
 
 ## Examples
-
-See [examples/summary.csv](examples/summary.csv) and the `templates/` folder for pre-built dashboards.
+See [examples/summary.csv](examples/summary.csv) and `templates/` for dashboards.
 
 ## License
-
 Apache-2.0 © Your Name
