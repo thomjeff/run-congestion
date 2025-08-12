@@ -1,30 +1,34 @@
-# api/overlap.py — WSGI handler with warm DF cache and segment scoping
+#!/usr/bin/env python3
+# api/overlap.py — WSGI handler (Hobby-tier safe)
+# - Reads CSVs (URLs/paths)
+# - Optional `segments` filter; validates against overlaps.csv and errors with friendly message if no match
+# - Clamps stepKm < 0.03 to 0.03 with a visible warning
+# - Returns terminal-style text; adds step headers
+
 import json
-import os
+import io
 import time
-import tempfile
 from http import HTTPStatus
-from typing import List, Dict, Any
+from typing import List, Dict, Tuple, Any
 
 import pandas as pd
 
-from run_congestion.io_cache import get_csv_df
-
-# Prefer bridge; fall back to engine
 try:
     from run_congestion.bridge import analyze_overlaps
 except Exception:
     from run_congestion.engine import analyze_overlaps
 
-TIMEOUT_STEP_LIMIT = 0.03  # Hobby guardrail: anything below this risks 300s timeout
+MIN_STEP_KM = 0.03
 
-def _read_json_body(environ):
+def _read_json_body(environ) -> Dict[str, Any]:
     try:
         length = int(environ.get("CONTENT_LENGTH", "0"))
     except ValueError:
         length = 0
     body = environ.get("wsgi.input").read(length) if length > 0 else b""
-    return json.loads(body.decode("utf-8")) if body else {}
+    if not body:
+        return {}
+    return json.loads(body.decode("utf-8"))
 
 def _resp(start_response, status: str, body: str, headers=None, content_type="text/plain; charset=utf-8"):
     hdrs = [("Content-Type", content_type)]
@@ -33,54 +37,82 @@ def _resp(start_response, status: str, body: str, headers=None, content_type="te
     start_response(status, hdrs)
     return [body.encode("utf-8")]
 
-def _parse_segments(spec: Any) -> List[Dict[str, Any]]:
-    """Accept either strings 'Event:start-end' or dicts {event,start,end}.
-    Returns normalized list of dicts. OverlapsWith is optional (filter by event & span only).
-    """
-    out = []
-    if not spec:
-        return out
-    if isinstance(spec, list):
-        for item in spec:
-            if isinstance(item, str):
-                # Example: '10K:5.81-8.10'
-                try:
-                    left, rng = item.split(":", 1)
-                    s, e = rng.split("-", 1)
-                    out.append({"event": left.strip(), "start": float(s), "end": float(e)})
-                except Exception:
-                    continue
-            elif isinstance(item, dict):
-                ev = item.get("event")
-                st = item.get("start")
-                en = item.get("end")
-                ow = item.get("overlapsWith") or item.get("overlaps_with")
-                if ev is not None and st is not None and en is not None:
-                    out.append({"event": str(ev), "start": float(st), "end": float(en), "overlapsWith": (str(ow) if ow else None)})
-    return out
+def _parse_segment_item(item: Any) -> Tuple[str, float, float]:
+    """Accepts '10K:5.81-8.10' (hyphen or en-dash) or {'event':..., 'start':..., 'end':...}."""
+    if isinstance(item, dict):
+        ev = str(item.get("event", "")).strip()
+        st = float(item.get("start"))
+        en = float(item.get("end"))
+        return ev, min(st, en), max(st, en)
+    if isinstance(item, str):
+        s = item.strip()
+        s = s.replace("–", "-")  # normalize en dash
+        if ":" not in s or "-" not in s:
+            raise ValueError(f"Invalid segment format: {item!r}. Use 'Event:start-end' or object with event/start/end.")
+        ev, rng = s.split(":", 1)
+        st_s, en_s = rng.split("-", 1)
+        st = float(st_s)
+        en = float(en_s)
+        return ev.strip(), min(st, en), max(st, en)
+    raise ValueError(f"Unsupported segment entry: {item!r}")
 
-def _filter_overlaps_df(overlaps_df: pd.DataFrame, segments: List[Dict[str, Any]]) -> pd.DataFrame:
-    if not segments:
-        return overlaps_df
-    df = overlaps_df.copy()
-    # Normalize columns
-    cols = {c.lower(): c for c in df.columns}
-    def col(name): return cols.get(name, name)
-    if "event" not in cols or "start" not in cols or "end" not in cols:
-        return overlaps_df  # schema mismatch; fail open
+def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    df.columns = [c.strip().lower() for c in df.columns]
+    # normalize expected columns
+    rename_map = {}
+    if "overlapswith" not in df.columns and "overlaps_with" in df.columns:
+        rename_map["overlaps_with"] = "overlapswith"
+    if rename_map:
+        df = df.rename(columns=rename_map)
+    return df
 
-    mask_total = pd.Series(False, index=df.index)
-    for seg in segments:
-        m = (df[col("event")].astype(str) == seg["event"]) & (df[col("start")] >= seg["start"]) & (df[col("end")] <= seg["end"])
-        if seg.get("overlapsWith"):
-            if "overlapswith" in cols:
-                m = m & (df[col("overlapswith")].astype(str) == seg["overlapsWith"])
-            elif "overlaps_with" in cols:
-                m = m & (df[col("overlaps_with")].astype(str) == seg["overlapsWith"])
-        mask_total = mask_total | m
-    filtered = df[mask_total]
-    # If filter accidentally empty, keep original to avoid "no segments" surprise
-    return filtered if not filtered.empty else overlaps_df
+def _load_overlaps_df(overlaps_src: str) -> pd.DataFrame:
+    df = pd.read_csv(overlaps_src)
+    return _normalize_cols(df)
+
+def _filter_overlaps(df: pd.DataFrame, requested: List[Tuple[str, float, float]]) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
+    """Return filtered overlaps, and a list of unmatched requested items with suggestions."""
+    out_rows = []
+    unmatched = []
+    # build quick index by event (case-insensitive)
+    df_event_norm = df["event"].astype(str).str.strip()
+    df = df.assign(_event_norm=df_event_norm.str.lower())
+    event_to_rows = {ev: grp.copy() for ev, grp in df.groupby("_event_norm")}
+
+    for ev, st, en in requested:
+        ev_norm = ev.strip().lower()
+        group = event_to_rows.get(ev_norm)
+        if group is None or group.empty:
+            # No such event; suggest available events
+            suggestions = sorted(set(df["_event_norm"].str.upper().tolist()))
+            unmatched.append({"event": ev, "start": st, "end": en, "reason": "event_not_found", "available_events": suggestions})
+            continue
+        # ranges that intersect with [st,en]
+        mask = (group["start"] <= en + 1e-9) & (group["end"] >= st - 1e-9)
+        subset = group.loc[mask]
+        if subset.empty:
+            # build valid ranges for this event
+            vals = [
+                {
+                    "event": str(r["event"]),
+                    "start": float(r["start"]),
+                    "end": float(r["end"]),
+                    "description": str(r.get("description", "")),
+                }
+                for _, r in group.iterrows()
+            ]
+            unmatched.append({"event": ev, "start": st, "end": en, "reason": "range_not_found", "valid_segments": vals})
+            continue
+        out_rows.append(subset.drop(columns=["_event_norm"]))
+
+    if out_rows:
+        filtered = pd.concat(out_rows, ignore_index=True)
+        # de-dup exact duplicate rows if any
+        filtered = filtered.drop_duplicates(subset=["event", "start", "end", "overlapswith", "description"], keep="first")
+    else:
+        filtered = pd.DataFrame(columns=list(df.drop(columns=["_event_norm"]).columns))
+    return filtered, unmatched
 
 def app(environ, start_response):
     if environ.get("REQUEST_METHOD") != "POST":
@@ -91,52 +123,79 @@ def app(environ, start_response):
     except Exception as e:
         return _resp(start_response, f"{HTTPStatus.BAD_REQUEST.value} {HTTPStatus.BAD_REQUEST.phrase}", f"Invalid JSON: {e}", content_type="application/json; charset=utf-8")
 
-    pace = req.get("paceCsv")
-    overlaps = req.get("overlapsCsv")
+    pace_src = req.get("paceCsv") or req.get("pace")
+    overlaps_src = req.get("overlapsCsv") or req.get("overlaps")
     start_times = req.get("startTimes")
-    if not pace or not overlaps or not start_times:
+    if not pace_src or not overlaps_src or not start_times:
         return _resp(start_response, f"{HTTPStatus.BAD_REQUEST.value} {HTTPStatus.BAD_REQUEST.phrase}", "Missing required fields: paceCsv, overlapsCsv, startTimes", content_type="application/json; charset=utf-8")
 
     time_window = int(req.get("timeWindow", 60))
-    requested_step = float(req.get("stepKm", TIMEOUT_STEP_LIMIT))
-    verbose = bool(req.get("verbose", True))
+    step_km_req = float(req.get("stepKm", 0.03))
     rank_by = req.get("rankBy", "peak_ratio")
-    segments_spec = _parse_segments(req.get("segments"))
+    verbose = bool(req.get("verbose", True))
 
-    # Clamp/warn only when below the safe limit
-    eff_step = requested_step
-    warning = None
-    if eff_step < TIMEOUT_STEP_LIMIT:
-        warning = f"⚠️ Requested stepKm={requested_step:.3f} is below the API's timeout-safe limit ({TIMEOUT_STEP_LIMIT:.2f}). Using {TIMEOUT_STEP_LIMIT:.2f} instead to avoid timeouts."
-        eff_step = TIMEOUT_STEP_LIMIT
+    # Guardrail clamp
+    step_km = step_km_req
+    warning_lines = []
+    if step_km < MIN_STEP_KM:
+        warning_lines.append(f"⚠️ Step clamp applied:\n- Requested stepKm={step_km:.3f} is below the API performance limit ({MIN_STEP_KM:.3f}).\n- Using stepKm={MIN_STEP_KM:.3f} to avoid API timeouts.")
+        step_km = MIN_STEP_KM
 
-    # If a segment filter is provided, hydrate overlaps into DF, filter, write a temp CSV path
-    overlaps_path = overlaps
-    if segments_spec:
+    # Segment filtering (optional)
+    segments = req.get("segments")
+    overlaps_path_for_engine = overlaps_src
+    if segments:
+        # parse requested
         try:
-            ov_df = get_csv_df(overlaps)
-            ov_f = _filter_overlaps_df(ov_df, segments_spec)
-            # write to a temp file visible to runtime
-            with tempfile.NamedTemporaryFile(mode="w+", suffix=".csv", delete=False) as tmp:
-                ov_f.to_csv(tmp.name, index=False)
-                overlaps_path = tmp.name
+            requested = [_parse_segment_item(item) for item in segments]
         except Exception as e:
-            # fail open: proceed with original overlaps CSV
-            overlaps_path = overlaps
+            return _resp(start_response, f"{HTTPStatus.BAD_REQUEST.value} {HTTPStatus.BAD_REQUEST.phrase}", f"Invalid segments: {e}", content_type="application/json; charset=utf-8")
+        try:
+            ov_df = _load_overlaps_df(overlaps_src)
+        except Exception as e:
+            return _resp(start_response, f"{HTTPStatus.BAD_REQUEST.value} {HTTPStatus.BAD_REQUEST.phrase}", f"Failed to load overlaps CSV: {e}", content_type="application/json; charset=utf-8")
+        filtered_df, unmatched = _filter_overlaps(ov_df, requested)
+        if unmatched:
+            # Build friendly message echoing what user sent, and offering valid options per event
+            lines = ["Your 'segments' request did not match one or more valid overlap segments.", "Requested segments:"]
+            for ev, st, en in requested:
+                lines.append(f"- {ev}:{st:.2f}-{en:.2f}")
+            lines.append("")
+            # Group unmatched by reason
+            for item in unmatched:
+                if item["reason"] == "event_not_found":
+                    lines.append(f"• Event not found: {item['event']} (requested {item['start']:.2f}-{item['end']:.2f}). Available events: {', '.join(item['available_events']) or '—'}")
+                elif item["reason"] == "range_not_found":
+                    lines.append(f"• No overlapping range for {item['event']} ({item['start']:.2f}-{item['end']:.2f}). Valid segments for this event:")
+                    for seg in item["valid_segments"]:
+                        desc = f" ({seg['description']})" if seg.get("description") else ""
+                        lines.append(f"   - {seg['event']}:{seg['start']:.2f}-{seg['end']:.2f}{desc}")
+            msg = "\n".join(lines)
+            return _resp(start_response, f"{HTTPStatus.BAD_REQUEST.value} {HTTPStatus.BAD_REQUEST.phrase}", msg, content_type="text/plain; charset=utf-8")
+        # If we get here, all requested segments matched at least one row
+        if filtered_df.empty:
+            return _resp(start_response, f"{HTTPStatus.BAD_REQUEST.value} {HTTPStatus.BAD_REQUEST.phrase}", "No segments remained after filtering; please check your request.", content_type="text/plain; charset=utf-8")
+        # Write to a temp CSV in /tmp (writable in serverless) and pass that to engine
+        tmp_path = "/tmp/overlaps.filtered.csv"
+        filtered_df.to_csv(tmp_path, index=False)
+        overlaps_path_for_engine = tmp_path
 
     t0 = time.time()
-    # Call your existing engine; pass URLs/paths directly
-    result = analyze_overlaps(
-        pace,
-        overlaps_path,
-        start_times,
-        time_window=time_window,
-        step_km=eff_step,
-        verbose=verbose,
-        rank_by=rank_by,
-    )
+    try:
+        result = analyze_overlaps(
+            pace_src,
+            overlaps_path_for_engine,
+            start_times,
+            time_window=time_window,
+            step_km=step_km,
+            verbose=verbose,
+            rank_by=rank_by,
+        )
+    except Exception as e:
+        payload = json.dumps({"error": str(e)}, ensure_ascii=False)
+        return _resp(start_response, f"{HTTPStatus.INTERNAL_SERVER_ERROR.value} {HTTPStatus.INTERNAL_SERVER_ERROR.phrase}", payload, content_type="application/json; charset=utf-8")
 
-    # Normalize return
+    # Normalize result
     if isinstance(result, tuple) and len(result) >= 2:
         report_text = result[0] or ""
     elif isinstance(result, dict):
@@ -144,13 +203,14 @@ def app(environ, start_response):
     else:
         report_text = str(result) if result is not None else ""
 
-    if warning:
-        report_text = f"{warning}\n\n{report_text}"
+    if warning_lines:
+        report_text = "\n".join(warning_lines) + "\n\n" + report_text
 
     headers = [
+        ("X-StepKm-Requested", f"{step_km_req}"),
+        ("X-StepKm-Effective", f"{step_km}"),
+        ("X-StepKm-Min", f"{MIN_STEP_KM}"),
         ("X-Compute-Ms", str(int((time.time() - t0) * 1000))),
-        ("X-StepKm-Requested", str(requested_step)),
-        ("X-StepKm-Effective", str(eff_step)),
-        ("X-StepKm-Min", str(TIMEOUT_STEP_LIMIT)),
     ]
+
     return _resp(start_response, f"{HTTPStatus.OK.value} {HTTPStatus.OK.phrase}", report_text, headers=headers)
