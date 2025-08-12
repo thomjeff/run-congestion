@@ -1,5 +1,7 @@
 # Changelog
 
+## [1.1.1] - 2025-08-12
+
 ## [1.1.0] - 2025-08-06
 ### Added
 - Benchmark timing output: prints total computation time after analysis.
