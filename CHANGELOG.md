@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.1.2 - 2025-08-12
+### Added
+- Summary CSV outputs are now written to a dedicated `results/` folder instead of the `examples/` directory.
+- Maintains the existing date-time stamp (YYYY-MM-DDTHHMMSS) prefix for output files.
+- Improved file organization for better separation of example data and generated run outputs.
+
 ## [1.1.1] - 2025-08-12
 ## Fixed
 - Breaking errors by GPT4o.
