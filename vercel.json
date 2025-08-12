@@ -1,9 +1,6 @@
 {
   "version": 2,
   "functions": {
-    "api/overlap.py": { "runtime": "python3.11" }
-  },
-  "routes": [
-    { "src": "/api/overlap", "dest": "api/overlap.py" }
-  ]
+    "api/**.py": { "runtime": "python3.11" }
+  }
 }
