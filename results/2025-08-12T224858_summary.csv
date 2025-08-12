@@ -1,0 +1,8 @@
+event_pair,start_km,end_km,description,peak,peak_ratio,intensity,intensity_per_km,distinct_pairs
+Full vs 10K,16.0,20.52,Full/10K Friel to Queen Sq. Loop,823,83.4685598377282,1293510,286174.77876106196,9811
+10K vs Half,5.81,8.1,Friel to Station/Barker,1250,81.69934640522875,2264329,988789.9563318777,42299
+Full vs Half,37.0,42.2,Bridge/Mill to Finish,1040,81.25,1437730,276486.5384615383,10061
+Full vs Half,29.03,37.0,Bridge/Mill to/back Tree Farm,1022,79.84375,2321108,291230.61480552074,16591
+Full vs Half,23.24,29.03,Barker/Station to McGloin via Gibson,959,74.921875,1597789,275956.6493955094,14857
+10K vs Half,0.0,2.74,Start to Friel,234,15.294117647058824,14270,5208.029197080292,1050
+Full vs 10K,0.0,4.25,Full start to 10K turn,24,2.434077079107505,608,143.05882352941177,39
