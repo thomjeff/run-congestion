@@ -1,13 +1,11 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/overlap.py", "use": "@vercel/python" }
-  ],
-  "routes": [
-    {
-      "src": "/api/overlap",
-      "methods": ["POST"],
-      "dest": "/api/overlap.py"
+  "functions": {
+    "api/overlap.py": {
+      "runtime": "python3.11"
     }
+  },
+  "routes": [
+    { "src": "/api/overlap", "dest": "api/overlap.py" }
   ]
 }
