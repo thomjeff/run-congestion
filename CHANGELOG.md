@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.2.0 - 2025-08-12
+### Serverless Caching (Option A)
+
+The `/api/overlap` endpoint now implements a cache-first strategy:
+
+- **L1 in-memory cache:** per-instance, fast warm hits.
+- **Optional L2 Vercel Blob:** set `BLOB_READ_WRITE_URL` to enable cross-instance caching.
+- Cache key includes file content hashes and all relevant parameters (startTimes, timeWindow, stepKm, rankBy).
+
+**Response headers**
+- `X-Overlap-Cache: L1 | L2 | MISS`
+- `X-Compute-Ms: <milliseconds>`
+- `X-StepKm: <value>`
+
+Enable L2 by adding `BLOB_READ_WRITE_URL` in your Vercel Project Settings → Environment Variables.
+
+## v1.1.3 - 2025-08-12
+### Changed
+- License from Apache to MIT.
+
 ## v1.1.2 - 2025-08-12
 ### Added
 - Summary CSV outputs are now written to a dedicated `results/` folder instead of the `examples/` directory.
