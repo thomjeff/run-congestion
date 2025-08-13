@@ -1,0 +1,22 @@
+HTTP/2 200 
+cache-control: public, max-age=0, must-revalidate
+content-type: text/plain; charset=utf-8
+date: Wed, 13 Aug 2025 15:27:11 GMT
+server: Vercel
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-compute-seconds: 4.75
+x-events-seen: Full,10K,Half
+x-request-utc: 2025-08-13 15:27:06
+x-robots-tag: noindex
+x-stepkm: 0.03
+x-vercel-cache: MISS
+x-vercel-id: iad1::iad1::pdclx-1755098826530-8a673b60fe17
+
+🗂️ Interaction Intensity Summary — ranked by cumulative overlap events:
+01. Full vs Half 29.03km–37.00km (Bridge/Mill to/back Tree Farm): PeakRatio=79.84%, Peak=1,022, Intensity/km=97206.1, Intensity=774,733, DistinctPairs=16,591
+02. 10K vs Half 5.81km–8.10km (Friel to Station/Barker): PeakRatio=81.70%, Peak=1,250, Intensity/km=330740.2, Intensity=757,395, DistinctPairs=42,299
+03. Full vs Half 23.24km–29.03km (Barker/Station to McGloin via Gibson): PeakRatio=74.92%, Peak=959, Intensity/km=92288.8, Intensity=534,352, DistinctPairs=14,857
+04. Full vs Half 37.00km–42.20km (Bridge/Mill to Finish): PeakRatio=81.25%, Peak=1,040, Intensity/km=92612.3, Intensity=481,584, DistinctPairs=10,061
+05. Full vs 10K 16.00km–20.52km (Full/10K Friel to Queen Sq. Loop): PeakRatio=83.47%, Peak=823, Intensity/km=95684.1, Intensity=432,492, DistinctPairs=9,811
+06. 10K vs Half 0.00km–2.74km (Start to Friel): PeakRatio=14.51%, Peak=222, Intensity/km=1738.3, Intensity=4,763, DistinctPairs=1,003
+07. Full vs 10K 0.00km–4.25km (Full start to 10K turn): PeakRatio=2.33%, Peak=23, Intensity/km=44.2, Intensity=188, DistinctPairs=38

@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.5] — 2025-08-13
+### Added
+  • test_runner.sh for automated execution of CLI tests (C1–C7) and API tests (A1–A8).
+  • Markdown test plan with descriptions, inputs, and expected results for each test case.
+  • Instructions for editing .env and running test_runner.sh.
+  • Automatic log saving to results/test_runs/ with timestamped filenames.
+
+Improved
+  • Expanded test documentation for reproducibility and clarity.
+
 ## [1.1.4] — 2025-08-13
 ### Added
 - Execution-time telemetry restored:

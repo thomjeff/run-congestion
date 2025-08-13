@@ -1,0 +1,17 @@
+HTTP/2 500 
+cache-control: public, max-age=0, must-revalidate
+content-type: text/plain; charset=utf-8
+date: Wed, 13 Aug 2025 15:27:17 GMT
+server: Vercel
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-robots-tag: noindex
+x-vercel-cache: MISS
+x-vercel-error: FUNCTION_INVOCATION_FAILED
+x-vercel-id: iad1::8b4wn-1755098836987-963ea6f1afc8
+content-length: 96
+
+A server error has occurred
+
+FUNCTION_INVOCATION_FAILED
+
+iad1::8b4wn-1755098836987-963ea6f1afc8
