@@ -1,159 +1,170 @@
-# api/overlap.py
+#!/usr/bin/env python3
+# api/overlap.py — robust Vercel handler
+# - Uses engine_adapter.analyze_overlaps (signature-safe: step vs step_km)
+# - Appends CLI-style footer: "Effective step used ...", and per-segment samples when verbose=true
+# - Returns detailed error text on 500s to make debugging easy (instead of opaque FUNCTION_INVOCATION_FAILED)
+
 import json
-import time
+import traceback
 from datetime import datetime, timezone
 from http import HTTPStatus
 from typing import Any, Dict, List, Optional
 
-from run_congestion.engine_adapter import analyze_overlaps  # normalizes to engine.analyze_overlaps
-from run_congestion.engine_adapter import parse_start_times  # if you expose it there; else inline
+# Prefer the adapter (adds meta & adapts step param); fallback to engine if needed.
+try:
+    from run_congestion.engine_adapter import analyze_overlaps
+except Exception:
+    from run_congestion.engine import analyze_overlaps  # type: ignore
 
-def _json_error(msg: str, status: int = 500) -> tuple[str, int, list[tuple[str, str]]]:
-    body = json.dumps({"error": msg})
-    headers = [
-        ("Content-Type", "application/json; charset=utf-8"),
-        ("X-Robots-Tag", "noindex"),
-        ("Cache-Control", "public, max-age=0, must-revalidate"),
-    ]
-    return body, status, headers
 
-def _coerce_step(payload: Dict[str, Any]) -> float:
-    # Accept both stepKm and step_km; fall back to 0.03 if missing
-    if "stepKm" in payload and isinstance(payload["stepKm"], (int, float)):
-        return float(payload["stepKm"])
-    if "step_km" in payload and isinstance(payload["step_km"], (int, float)):
-        return float(payload["step_km"])
-    return 0.03
+def _as_bool(v, default: bool = False) -> bool:
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return bool(v)
+    if isinstance(v, str):
+            s = v.strip().lower()
+            if s in ("1","true","yes","y","on"): return True
+            if s in ("0","false","no","n","off"): return False
+    return default
 
-def _coerce_segments(payload: Dict[str, Any]) -> Optional[List[str]]:
-    segs = payload.get("segments")
-    if segs is None:
+
+def _read_json_body(request) -> Dict[str, Any]:
+    """
+    Works across Vercel Python request objects (Werkzeug/Flask-like) and
+    falls back to minimal parsing if get_json is not available.
+    """
+    # Flask/Werkzeug-style
+    try:
+        if hasattr(request, "get_json"):
+            data = request.get_json(silent=True)
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+
+    # Try raw data
+    try:
+        if hasattr(request, "get_data"):
+            raw = request.get_data(as_text=True)
+        elif hasattr(request, "data"):
+            raw = request.data.decode("utf-8") if isinstance(request.data, (bytes, bytearray)) else str(request.data)
+        else:
+            raw = ""
+    except Exception:
+        raw = ""
+
+    if raw and raw.strip():
+        try:
+            return json.loads(raw)
+        except Exception:
+            return {}
+    return {}
+
+
+def _normalize_segments(v) -> Optional[List[str]]:
+    if v is None:
         return None
-    # Ensure list[str]
-    if isinstance(segs, list):
-        return [str(s) for s in segs]
-    # Allow single string
-    if isinstance(segs, str):
-        return [segs]
+    if isinstance(v, list):
+        return [str(x) for x in v]
+    if isinstance(v, str):
+        return [v]
     return None
+
 
 def _footer_text(effective_step: float, requested_step: float, verbose: bool,
                  samples_per_segment: Optional[Dict[str, int]]) -> str:
-    lines = []
+    lines: List[str] = []
     lines.append("")
     lines.append(f"ℹ️  Effective step used: {effective_step:.3f} km (requested {requested_step:.3f} km)")
     if verbose and samples_per_segment:
         lines.append("   Samples per segment (distance ticks):")
-        # stable order: sort by event then numeric start
-        def _parse_key(k: str):
-            # Keys look like "Event:start-end"
+        # Sort stably by event and numeric start
+        def _k(k: str):
             try:
-                event, rng = k.split(":", 1)
+                ev, rng = k.split(":", 1)
                 s, e = rng.split("-", 1)
-                return (event, float(s), float(e))
+                return (ev, float(s), float(e))
             except Exception:
                 return (k, 0.0, 0.0)
-        for key in sorted(samples_per_segment.keys(), key=_parse_key):
+        for key in sorted(samples_per_segment.keys(), key=_k):
             lines.append(f"   • {key}: {samples_per_segment[key]} samples")
     return "\n".join(lines)
 
+
 def handler(request, response):
-    # Minimal WSGI-like shim expected by Vercel Python runtime
+    """
+    Vercel will pass (request, response) objects.
+    We always return text/plain and append the CLI-style footer.
+    On error we return 500 with the exception text to make triage easier.
+    """
     try:
-        t0 = time.perf_counter()
-        request_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        payload = _read_json_body(request)
 
-        raw = request.get_data(as_text=True)  # type: ignore[attr-defined]
-        try:
-            payload = json.loads(raw) if raw else {}
-        except Exception:
-            body, status, headers = _json_error("Invalid JSON in request body", 500)
-            response.status_code = status
-            for k, v in headers:
-                response.headers[k] = v
-            response.set_data(body)
-            return
-
-        pace_csv = payload.get("paceCsv")
-        overlaps_csv = payload.get("overlapsCsv")
-        start_times = payload.get("startTimes", {})
-        time_window = int(payload.get("timeWindow", 60))
-        requested_step = _coerce_step(payload)
+        pace_csv = payload.get("paceCsv") or payload.get("pace_csv")
+        overlaps_csv = payload.get("overlapsCsv") or payload.get("overlaps_csv")
+        start_times = payload.get("startTimes") or payload.get("start_times") or {}
+        time_window = int(payload.get("timeWindow") or payload.get("time_window") or 60)
+        # accept both stepKm / step_km
+        requested_step = float(payload.get("stepKm", payload.get("step_km", 0.03)))
+        verbose = _as_bool(payload.get("verbose"), False)
         rank_by = str(payload.get("rankBy", "peak_ratio"))
-        verbose = bool(payload.get("verbose", False))
-        segments = _coerce_segments(payload)
+        segments = _normalize_segments(payload.get("segments"))
 
         if not pace_csv or not overlaps_csv:
-            body, status, headers = _json_error("Missing required fields: paceCsv and overlapsCsv", 500)
-            response.status_code = status
-            for k, v in headers:
-                response.headers[k] = v
-            response.set_data(body)
+            response.status_code = HTTPStatus.BAD_REQUEST
+            response.headers["Content-Type"] = "text/plain; charset=utf-8"
+            response.set_data("Missing required fields: paceCsv and overlapsCsv\n")
             return
 
-        # Normalize startTimes (accept dict already)
+        # Normalize start_times (dict is expected by engine)
         if isinstance(start_times, dict):
             st = {str(k): float(v) for k, v in start_times.items()}
         else:
-            # If sent as list of "Event=Minutes" strings (rare for API), parse similarly
-            st = parse_start_times(start_times)  # type: ignore[arg-type]
+            # Allow list of "Event=Minutes" strings
+            st = {}
+            for entry in start_times:
+                if isinstance(entry, str) and "=" in entry:
+                    k, v = entry.split("=", 1)
+                    st[k].strip()  # ensure key exists
+                    st[k.strip()] = float(v.strip())
 
-        # Run analysis (adapter maps step_km -> engine's step)
-        res = analyze_overlaps(
+        # Run analysis (adapter maps step_km to engine's parameter name)
+        result = analyze_overlaps(
             pace_csv=pace_csv,
             overlaps_csv=overlaps_csv,
             start_times=st,
             time_window=time_window,
-            step_km=requested_step,          # adapter supports step_km
+            step_km=requested_step,
             verbose=verbose,
             rank_by=rank_by,
             segments=segments,
         )
 
-        # Expect engine/adapter to return:
-        # {
-        #   "text": "<pretty output>",
-        #   "meta": {
-        #       "effective_step": float,
-        #       "samples_per_segment": { "Event:start-end": int, ... }
-        #   }
-        # }
-        txt = str(res.get("text", ""))
-        meta = dict(res.get("meta", {}))
-        effective_step = float(meta.get("effective_step", requested_step))
-        samples_per_segment = meta.get("samples_per_segment")
+        text = str((result or {}).get("text", ""))
+        meta = dict((result or {}).get("meta", {}))
+        # engine_adapter sets effective_step_km; some engines used 'effective_step'
+        effective = float(meta.get("effective_step_km", meta.get("effective_step", requested_step)))
+        samples = meta.get("samples_per_segment") or {}
 
-        # Append footer (always include effective step; include samples when verbose)
-        txt += _footer_text(effective_step, requested_step, verbose, samples_per_segment)
+        # Append CLI-style footer
+        text += _footer_text(effective, requested_step, verbose, samples)
+        if not text.endswith("\n"):
+            text += "\n"
 
-        compute_s = time.perf_counter() - t0
-
-        # Write response
+        # Response
         response.status_code = HTTPStatus.OK
         response.headers["Content-Type"] = "text/plain; charset=utf-8"
         response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
         response.headers["X-Robots-Tag"] = "noindex"
-
-        # Useful diagnostics
-        response.headers["X-Request-UTC"] = request_utc
-        response.headers["X-Compute-Seconds"] = f"{compute_s:.2f}"
-        # Show the **effective** step used (not just requested)
-        response.headers["X-StepKm"] = f"{effective_step:.2f}"
-        # A quick sanity header of which events were seen (best-effort)
-        try:
-            # This mirrors what your current route prints
-            # (we don't re-parse CSVs here—just pass through if engine provided it)
-            events_seen = res.get("events_seen")
-            if isinstance(events_seen, list):
-                response.headers["X-Events-Seen"] = ",".join(events_seen)
-        except Exception:
-            pass
-
-        response.set_data(txt)
+        response.headers["X-StepKm"] = f"{effective:.3f}"
+        response.headers["X-Request-StepKm"] = f"{requested_step:.3f}"
+        response.headers["X-Request-UTC"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        response.set_data(text)
 
     except Exception as e:
-        body, status, headers = _json_error(str(e), 500)
-        response.status_code = status
-        for k, v in headers:
-            response.headers[k] = v
-        response.set_data(body)
+        # Return detailed error text to avoid opaque FUNCTION_INVOCATION_FAILED
+        response.status_code = HTTPStatus.INTERNAL_SERVER_ERROR
+        response.headers["Content-Type"] = "text/plain; charset=utf-8"
+        tb = traceback.format_exc()
+        response.set_data(f"Unhandled error in api/overlap.py:\n{e}\n\n{tb}")
