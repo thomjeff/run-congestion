@@ -1,0 +1,79 @@
+🔍 Checking 10K vs Half from 0.00km–2.74km...
+📝 Segment: Start to Friel
+🟦 Overlap segment: 0.00km–2.74km (Start to Friel)
+👥 Total in 'Half': 912 runners
+👥 Total in '10K': 618 runners
+⚠️ First overlap at 07:47:11 at 2.25km -> 10K Bib: 1617, Half Bib: 1618
+📈 Interaction Intensity over segment: 4,763 (cumulative overlap events)
+🔥 Peak congestion: 222 total runners at best step (16 from '10K', 206 from 'Half')
+🔁 Unique Pairs: 1,003
+
+🔍 Checking 10K vs Half from 5.81km–8.10km...
+📝 Segment: Friel to Station/Barker
+🟦 Overlap segment: 5.81km–8.10km (Friel to Station/Barker)
+👥 Total in 'Half': 912 runners
+👥 Total in '10K': 618 runners
+⚠️ First overlap at 07:59:54 at 5.81km -> 10K Bib: 1444, Half Bib: 1618
+📈 Interaction Intensity over segment: 757,395 (cumulative overlap events)
+🔥 Peak congestion: 1,250 total runners at best step (355 from '10K', 895 from 'Half')
+🔁 Unique Pairs: 42,299
+
+🔍 Checking Full vs 10K from 0.00km–4.25km...
+📝 Segment: Full start to 10K turn
+🟦 Overlap segment: 0.00km–4.25km (Full start to 10K turn)
+👥 Total in '10K': 618 runners
+👥 Total in 'Full': 368 runners
+⚠️ First overlap at 07:31:26 at 3.69km -> Full Bib: 2897, 10K Bib: 1000
+📈 Interaction Intensity over segment: 188 (cumulative overlap events)
+🔥 Peak congestion: 23 total runners at best step (12 from 'Full', 11 from '10K')
+🔁 Unique Pairs: 38
+
+🔍 Checking Full vs 10K from 16.00km–20.52km...
+📝 Segment: Full/10K Friel to Queen Sq. Loop
+🟦 Overlap segment: 16.00km–20.52km (Full/10K Friel to Queen Sq. Loop)
+👥 Total in '10K': 618 runners
+👥 Total in 'Full': 368 runners
+⚠️ First overlap at 08:13:04 at 16.06km -> Full Bib: 2579, 10K Bib: 1000
+📈 Interaction Intensity over segment: 432,492 (cumulative overlap events)
+🔥 Peak congestion: 823 total runners at best step (320 from 'Full', 503 from '10K')
+🔁 Unique Pairs: 9,811
+
+🔍 Checking Full vs Half from 23.24km–29.03km...
+📝 Segment: Barker/Station to McGloin via Gibson
+🟦 Overlap segment: 23.24km–29.03km (Barker/Station to McGloin via Gibson)
+👥 Total in 'Half': 912 runners
+👥 Total in 'Full': 368 runners
+⚠️ First overlap at 09:02:24 at 23.24km -> Full Bib: 2686, Half Bib: 1618
+📈 Interaction Intensity over segment: 534,352 (cumulative overlap events)
+🔥 Peak congestion: 959 total runners at best step (250 from 'Full', 709 from 'Half')
+🔁 Unique Pairs: 14,857
+
+🔍 Checking Full vs Half from 29.03km–37.00km...
+📝 Segment: Bridge/Mill to/back Tree Farm
+🟦 Overlap segment: 29.03km–37.00km (Bridge/Mill to/back Tree Farm)
+👥 Total in 'Half': 912 runners
+👥 Total in 'Full': 368 runners
+⚠️ First overlap at 09:23:13 at 29.03km -> Full Bib: 2631, Half Bib: 1618
+📈 Interaction Intensity over segment: 774,733 (cumulative overlap events)
+🔥 Peak congestion: 1,022 total runners at best step (298 from 'Full', 724 from 'Half')
+🔁 Unique Pairs: 16,591
+
+🔍 Checking Full vs Half from 37.00km–42.20km...
+📝 Segment: Bridge/Mill to Finish
+🟦 Overlap segment: 37.00km–42.20km (Bridge/Mill to Finish)
+👥 Total in 'Half': 912 runners
+👥 Total in 'Full': 368 runners
+⚠️ First overlap at 09:52:03 at 37.00km -> Full Bib: 2583, Half Bib: 1618
+📈 Interaction Intensity over segment: 481,584 (cumulative overlap events)
+🔥 Peak congestion: 1,040 total runners at best step (309 from 'Full', 731 from 'Half')
+🔁 Unique Pairs: 10,061
+
+🗂️ Interaction Intensity Summary — ranked by peak congestion ratio (acute bottlenecks):
+01. Full vs 10K 16.00km–20.52km (Full/10K Friel to Queen Sq. Loop): PeakRatio=83.47%, Peak=823, Intensity/km=95684.1, Intensity=432,492, DistinctPairs=9,811
+02. 10K vs Half 5.81km–8.10km (Friel to Station/Barker): PeakRatio=81.70%, Peak=1,250, Intensity/km=330740.2, Intensity=757,395, DistinctPairs=42,299
+03. Full vs Half 37.00km–42.20km (Bridge/Mill to Finish): PeakRatio=81.25%, Peak=1,040, Intensity/km=92612.3, Intensity=481,584, DistinctPairs=10,061
+04. Full vs Half 29.03km–37.00km (Bridge/Mill to/back Tree Farm): PeakRatio=79.84%, Peak=1,022, Intensity/km=97206.1, Intensity=774,733, DistinctPairs=16,591
+05. Full vs Half 23.24km–29.03km (Barker/Station to McGloin via Gibson): PeakRatio=74.92%, Peak=959, Intensity/km=92288.8, Intensity=534,352, DistinctPairs=14,857
+06. 10K vs Half 0.00km–2.74km (Start to Friel): PeakRatio=14.51%, Peak=222, Intensity/km=1738.3, Intensity=4,763, DistinctPairs=1,003
+07. Full vs 10K 0.00km–4.25km (Full start to 10K turn): PeakRatio=2.33%, Peak=23, Intensity/km=44.2, Intensity=188, DistinctPairs=38
+⏱️ Compute time: 1.95s

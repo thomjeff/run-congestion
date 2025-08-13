@@ -1,0 +1,27 @@
+HTTP/2 200 
+cache-control: public, max-age=0, must-revalidate
+content-type: text/plain; charset=utf-8
+date: Wed, 13 Aug 2025 15:08:11 GMT
+server: Vercel
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+x-compute-seconds: 0.03
+x-events-seen: Full,10K,Half
+x-request-utc: 2025-08-13 15:08:11
+x-robots-tag: noindex
+x-stepkm: 0.03
+x-vercel-cache: MISS
+x-vercel-id: iad1::iad1::dhm7t-1755097691010-e6a9c41cbc28
+
+Your 'segments' request did not match one or more valid overlap segments.
+Requested segments:
+- Full:99.00-100.00
+
+• Valid segments for 10K:
+   - 10K:0.00-2.74 (Start to Friel)
+   - 10K:5.81-8.10 (Friel to Station/Barker)
+• Valid segments for Full:
+   - Full:0.00-4.25 (Full start to 10K turn)
+   - Full:16.00-20.52 (Full/10K Friel to Queen Sq. Loop)
+   - Full:23.24-29.03 (Barker/Station to McGloin via Gibson)
+   - Full:29.03-37.00 (Bridge/Mill to/back Tree Farm)
+   - Full:37.00-42.20 (Bridge/Mill to Finish)
