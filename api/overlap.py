@@ -85,7 +85,6 @@ class handler(BaseHTTPRequestHandler):
         try:
             n = int(self.headers.get("Content-Length") or "0")
             payload = json.loads(self.rfile.read(n) or b"{}")
-
             pace_csv = payload.get("paceCsv")
             overlaps_csv = payload.get("overlapsCsv")
             start_times = payload.get("startTimes") or {}
