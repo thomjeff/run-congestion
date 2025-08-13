@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.2.0 - 2025-08-12
+## v1.1.4 - 2025-08-13
 ### Serverless Caching (Option A)
 
 The `/api/overlap` endpoint now implements a cache-first strategy:
@@ -15,6 +15,14 @@ The `/api/overlap` endpoint now implements a cache-first strategy:
 - `X-StepKm: <value>`
 
 Enable L2 by adding `BLOB_READ_WRITE_URL` in your Vercel Project Settings → Environment Variables.
+
+### Fixes
+- **`overlap.py`**: several patches to address incompatibility issues between CLI and JSON/POST usage. 
+- Segments normalization: trims & lowercases CSV events and your requested segment events before comparing, so 10K/10k/10K all match.
+- No positionals: Calls run_congestion.bridge.analyze_overlaps with keyword args only.
+- No DataFrame gotchas: If you request segments, it writes the filtered rows to a temp CSV and passes that path to the engine (which expects a path/URL).
+- Plain‑text output: Returns the same human‑readable block you like from the CLI, not JSON. (Error responses are JSON with an “error” key for debugging.)
+- Debug headers: X-Events-Seen, X-Request-UTC, X-StepKm so you can verify what the function read at runtime.
 
 ## v1.1.3 - 2025-08-12
 ### Changed
