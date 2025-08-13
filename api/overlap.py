@@ -1,151 +1,143 @@
-#!/usr/bin/env python3
-# api/overlap.py — aligned to your repo structure
-# ✔ Imports: run_congestion.engine_adapter.analyze_overlaps (fallback to run_congestion.engine)
-# ✔ Function: handler(request, response) — Vercel Python runtime entrypoint
-# ✔ Footer: "Effective step used ..." + (verbose) samples-per-segment, same as CLI
-# ✔ Errors: plain-text traceback in body (no more opaque FUNCTION_INVOCATION_FAILED)
-# ✔ Health check: GET returns {"ok": true, ...}
+# api/overlap.py
+# Vercel Python runtime handler (BaseHTTPRequestHandler) with robust error reporting.
+# - GET: health JSON
+# - POST: runs overlap analysis via run_congestion.engine_adapter (fallback to engine)
+# - Adds headers: X-StepKm, X-Compute-Seconds, X-Events-Seen, X-Request-UTC
+# - Returns CLI-like text; on error, returns full traceback in body.
 
-from http import HTTPStatus
-from typing import Any, Dict, List, Optional
+from http.server import BaseHTTPRequestHandler
+import json
+import os
+import time
+import traceback
+import datetime
 
-def _as_bool(v, default: bool = False) -> bool:
-    if isinstance(v, bool): return v
-    if isinstance(v, (int, float)): return bool(v)
-    if isinstance(v, str):
-        s = v.strip().lower()
-        if s in ("1","true","yes","y","on"): return True
-        if s in ("0","false","no","n","off"): return False
+def _to_bool(x, default=False):
+    if isinstance(x, bool):
+        return x
+    if isinstance(x, (int, float)):
+        return bool(x)
+    if isinstance(x, str):
+        v = x.strip().lower()
+        if v in ("1", "true", "yes", "y", "on"): return True
+        if v in ("0", "false", "no", "n", "off"): return False
     return default
 
-def _normalize_segments(v) -> Optional[List[str]]:
-    if v is None: return None
-    if isinstance(v, list): return [str(x) for x in v]
-    if isinstance(v, str): return [v]
-    return None
-
-def _footer_text(effective_step: float, requested_step: float, verbose: bool,
-                 samples_per_segment: Optional[Dict[str, int]]) -> str:
-    lines: List[str] = []
-    lines.append("")
-    lines.append(f"ℹ️  Effective step used: {effective_step:.3f} km (requested {requested_step:.3f} km)")
-    if verbose and samples_per_segment:
-        lines.append("   Samples per segment (distance ticks):")
-        def _k(k: str):
-            try:
-                ev, rng = k.split(":", 1)
-                s, e = rng.split("-", 1)
-                return (ev, float(s), float(e))
-            except Exception:
-                return (k, 0.0, 0.0)
-        for key in sorted(samples_per_segment.keys(), key=_k):
-            lines.append(f"   • {key}: {samples_per_segment[key]} samples")
-    return "\n".join(lines)
-
-def handler(request, response):
-    import json, time, traceback
-    from datetime import datetime, timezone
-
-    # --- Health check (GET) ---
-    if getattr(request, "method", "POST").upper() == "GET":
-        response.status_code = HTTPStatus.OK
-        response.headers["Content-Type"] = "application/json; charset=utf-8"
-        response.headers["Cache-Control"] = "no-store"
-        response.set_data(json.dumps({
-            "ok": True,
-            "ts_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        }))
-        return
-
-    t0 = time.perf_counter()
-    request_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-
-    # --- Parse JSON body safely ---
-    try:
-        if hasattr(request, "get_json"):
-            payload = request.get_json(silent=True) or {}
-        else:
-            raw = request.get_data(as_text=True) if hasattr(request, "get_data") else ""
-            payload = json.loads(raw) if raw else {}
-        if not isinstance(payload, dict):
-            payload = {}
-    except Exception:
-        payload = {}
-
-    try:
-        # --- Defer heavy imports (so errors print to body) ---
+class handler(BaseHTTPRequestHandler):
+    def _write(self, status=200, body="", headers=None, content_type="text/plain; charset=utf-8"):
         try:
-            from run_congestion.engine_adapter import analyze_overlaps  # type: ignore
-            adapter_used = True
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            if headers:
+                for k, v in headers.items():
+                    self.send_header(k, str(v))
+            # Default caching like previous versions
+            self.send_header("Cache-Control", "public, max-age=0, must-revalidate")
+            self.end_headers()
+            if isinstance(body, (bytes, bytearray)):
+                self.wfile.write(body)
+            else:
+                self.wfile.write(str(body).encode("utf-8"))
         except Exception:
-            from run_congestion.engine import analyze_overlaps  # type: ignore
-            adapter_used = False
+            # As a last resort, do nothing—connection may already be closed.
+            pass
 
-        # --- Inputs (support snake & camel case) ---
-        pace_csv = payload.get("paceCsv") or payload.get("pace_csv")
-        overlaps_csv = payload.get("overlapsCsv") or payload.get("overlaps_csv")
-        start_times = payload.get("startTimes") or payload.get("start_times") or {}
-        time_window = int(payload.get("timeWindow") or payload.get("time_window") or 60)
-        requested_step = float(payload.get("stepKm", payload.get("step_km", 0.03)))
-        verbose = _as_bool(payload.get("verbose"), False)
-        rank_by = str(payload.get("rankBy", "peak_ratio"))
-        segments = _normalize_segments(payload.get("segments"))
+    def do_GET(self):
+        info = {
+            "ok": True,
+            "name": "run-congestion overlap API",
+            "utc": datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            "commit": os.environ.get("VERCEL_GIT_COMMIT_SHA", ""),
+            "python": os.environ.get("PYTHON_VERSION", ""),
+        }
+        self._write(200, json.dumps(info), content_type="application/json; charset=utf-8")
 
-        if not pace_csv or not overlaps_csv:
-            response.status_code = HTTPStatus.BAD_REQUEST
-            response.headers["Content-Type"] = "text/plain; charset=utf-8"
-            response.set_data("Missing required fields: paceCsv and overlapsCsv\n")
+    def do_POST(self):
+        t0 = time.time()
+        raw = b""
+        try:
+            length = int(self.headers.get("content-length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b""
+            data = json.loads(raw.decode("utf-8") or "{}")
+        except Exception as e:
+            tb = traceback.format_exc()
+            self._write(400, f"JSON parse error: {e}\n\n{tb}")
             return
 
-        # Normalize start_times into dict[str,float]
-        if isinstance(start_times, dict):
-            st = {str(k): float(v) for k, v in start_times.items()}
-        else:
-            st = {}
-            for entry in (start_times or []):
-                if isinstance(entry, str) and "=" in entry:
-                    k, v = entry.split("=", 1)
-                    st[k.strip()] = float(v.strip())
+        # Inputs
+        paceCsv = data.get("paceCsv")
+        overlapsCsv = data.get("overlapsCsv")
+        startTimes = data.get("startTimes")
+        timeWindow = data.get("timeWindow", 60)
+        # Accept stepKm, step_km, step (in that order)
+        stepKm = data.get("stepKm", data.get("step_km", data.get("step", 0.03)))
+        rankBy = data.get("rankBy", "peak_ratio")
+        verbose = _to_bool(data.get("verbose", False))
+        segments = data.get("segments", None)
 
-        # --- Run analysis (adapter understands step_km) ---
-        result = analyze_overlaps(
-            pace_csv=pace_csv,
-            overlaps_csv=overlaps_csv,
-            start_times=st,
-            time_window=time_window,
-            step_km=requested_step,
-            verbose=verbose,
-            rank_by=rank_by,
-            segments=segments,
-        )
+        if not paceCsv or not overlapsCsv or not startTimes:
+            self._write(400, "Missing required fields: paceCsv, overlapsCsv, startTimes")
+            return
 
-        text = str((result or {}).get("text", ""))
-        meta = dict((result or {}).get("meta", {}))
-        effective = float(meta.get("effective_step_km", meta.get("effective_step", requested_step)))
-        samples = meta.get("samples_per_segment") or {}
+        try:
+            # Prefer adapter; fallback to engine
+            try:
+                from run_congestion.engine_adapter import analyze_overlaps as _analyze
+            except Exception:
+                from run_congestion.engine import analyze_overlaps as _analyze
 
-        # --- Append CLI-style footer ---
-        text += _footer_text(effective, requested_step, verbose, samples)
-        if not text.endswith("\n"):
-            text += "\n"
+            res = _analyze(
+                pace_csv=paceCsv,
+                overlaps_csv=overlapsCsv,
+                start_times=startTimes,
+                time_window=int(timeWindow),
+                step=float(stepKm),
+                verbose=verbose,
+                rank_by=str(rankBy),
+                segments=segments,
+            )
 
-        # --- Respond ---
-        elapsed = time.perf_counter() - t0
-        response.status_code = HTTPStatus.OK
-        response.headers["Content-Type"] = "text/plain; charset=utf-8"
-        response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
-        response.headers["X-Robots-Tag"] = "noindex"
-        response.headers["X-StepKm"] = f"{effective:.3f}"
-        response.headers["X-Request-StepKm"] = f"{requested_step:.3f}"
-        response.headers["X-Request-UTC"] = request_utc
-        response.headers["X-Compute-Seconds"] = f"{elapsed:.2f}"
-        response.headers["X-Adapter-Used"] = "1" if adapter_used else "0"
-        response.set_data(text)
+            # Normalize output
+            text_out = ""
+            events_seen = None
+            effective_step = None
+            samples_per_segment = None
 
-    except Exception as e:
-        # Surface full traceback in body for fast triage
-        response.status_code = HTTPStatus.INTERNAL_SERVER_ERROR
-        response.headers["Content-Type"] = "text/plain; charset=utf-8"
-        response.headers["Cache-Control"] = "no-store"
-        import traceback
-        response.set_data(f"Unhandled error in api/overlap.py:\n{e}\n\n{traceback.format_exc()}")
+            if isinstance(res, dict):
+                text_out = str(res.get("text") or res.get("body") or "")
+                events_seen = res.get("events_seen")
+                effective_step = res.get("effective_step")
+                samples_per_segment = res.get("samples_per_segment")
+            else:
+                text_out = str(res)
+
+            # Footer: Effective step + optional samples (to mirror CLI)
+            requested = float(stepKm)
+            eff = float(effective_step if effective_step is not None else requested)
+            footer = [f"\nℹ️  Effective step used: {eff:.3f} km (requested {requested:.3f} km)"]
+            if verbose and isinstance(samples_per_segment, dict) and samples_per_segment:
+                footer.append("   Samples per segment (distance ticks):")
+                for key, val in samples_per_segment.items():
+                    footer.append(f"   • {key}: {val} samples")
+            if footer:
+                text_out = (text_out or "") + "\n" + "\n".join(footer)
+
+            # Headers
+            compute_secs = f"{time.time() - t0:.2f}"
+            headers = {
+                "X-Compute-Seconds": compute_secs,
+                "X-Request-UTC": datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+                "X-StepKm": f"{eff:.2f}",
+            }
+            if events_seen:
+                if isinstance(events_seen, (list, tuple, set)):
+                    headers["X-Events-Seen"] = ",".join(map(str, events_seen))
+                else:
+                    headers["X-Events-Seen"] = str(events_seen)
+
+            self._write(200, text_out, headers=headers)
+
+        except Exception as e:
+            tb = traceback.format_exc()
+            # Return full traceback so we can see the real cause
+            self._write(500, tb)
