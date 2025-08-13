@@ -1,78 +1,95 @@
-
-"""
-Compatibility adapter so callers can always send step_km and consistent names,
-even if the local engine.py uses older parameter names like `step` or `pace_path`.
-"""
+# run_congestion/engine_adapter.py
+# Signature-adaptive wrapper: calls your existing run_congestion.engine.analyze_overlaps
+# whether it expects `step_km` or `step` (or neither) and filters kwargs to supported ones.
 from __future__ import annotations
-
+import typing as _t
 import inspect
+import pandas as pd
 
 try:
-    # Prefer package-relative import
-    from run_congestion.engine import analyze_overlaps as _engine_analyze_overlaps  # type: ignore
-except Exception:
-    # Fallback for flat layouts
-    from engine import analyze_overlaps as _engine_analyze_overlaps  # type: ignore
+    from run_congestion import engine as _eng
+except Exception as e:
+    raise ImportError("Could not import run_congestion.engine. Ensure engine.py exists.") from e
 
+def _supports(param_name: str, sig: inspect.Signature) -> bool:
+    return param_name in sig.parameters
+
+def _samples_per_segment(overlaps_csv: str | None, step_km: float) -> dict[str, int]:
+    if not overlaps_csv:
+        return {}
+    try:
+        df = pd.read_csv(overlaps_csv)
+    except Exception:
+        return {}
+    df.columns = [c.strip().lower() for c in df.columns]
+    req = {"event","start","end"}
+    if not req.issubset(df.columns):
+        return {}
+    out: dict[str,int] = {}
+    for _, r in df.iterrows():
+        try:
+            ev = str(r.get("event"))
+            a = float(r.get("start")); b = float(r.get("end"))
+        except Exception:
+            continue
+        if b < a:
+            a, b = b, a
+        n = int(round((b - a)/max(step_km,1e-9))) + 1
+        out[f"{ev}:{a:.2f}-{b:.2f}"] = n
+    return out
 
 def analyze_overlaps(
     *,
-    pace_csv,
-    overlaps_csv,
-    start_times,
+    pace_csv: str | None = None,
+    overlaps_csv: str | None = None,
+    start_times: dict[str, float] | None = None,
     time_window: int = 60,
-    step_km: float | None = None,
-    step: float | None = None,  # legacy alias
+    step_km: float = 0.03,
     verbose: bool = False,
     rank_by: str = "peak_ratio",
-    segments=None,
-):
-    """
-    Canonical signature expected by bridge/CLI/API.
-    Dispatches to the real engine.analyze_overlaps with best-effort arg mapping.
-    """
-    # normalize step
-    if step_km is None and step is not None:
-        step_km = float(step)
-    if step_km is None:
-        step_km = 0.03
+    segments: _t.Optional[_t.List[str]] = None,
+) -> dict:
+    # Inspect the real engine signature
+    real = getattr(_eng, "analyze_overlaps", None)
+    if not callable(real):
+        raise RuntimeError("run_congestion.engine.analyze_overlaps is missing")
+    sig = inspect.signature(real)
 
-    # Introspect the real engine function to map known aliases
-    sig = inspect.signature(_engine_analyze_overlaps)
-    params = sig.parameters
+    # Build adaptive kwargs
+    kw: dict = {}
+    # Common names used across versions
+    mapping = {
+        "pace_csv": pace_csv,
+        "overlaps_csv": overlaps_csv,
+        "start_times": start_times,
+        "time_window": time_window,
+        "verbose": verbose,
+        "rank_by": rank_by,
+        "segments": segments,
+    }
+    for k, v in mapping.items():
+        if _supports(k, sig):
+            kw[k] = v
 
-    kwargs = {}
-    if 'pace_csv' in params:
-        kwargs['pace_csv'] = pace_csv
-    elif 'pace_path' in params:
-        kwargs['pace_path'] = pace_csv
-    elif 'pace_df' in params:
-        kwargs['pace_df'] = pace_csv  # some variants took a DF; caller passes a path/URL
+    # Step param can be `step_km` (new) or `step` (older). Prefer engine's explicit parameter name.
+    if _supports("step_km", sig):
+        kw["step_km"] = step_km
+    elif _supports("step", sig):
+        kw["step"] = step_km
+    # else: engine will compute its own default/resolution
 
-    if 'overlaps_csv' in params:
-        kwargs['overlaps_csv'] = overlaps_csv
-    elif 'overlaps_path' in params:
-        kwargs['overlaps_path'] = overlaps_csv
+    # Call the real function
+    res = real(**kw)
 
-    if 'start_times' in params:
-        kwargs['start_times'] = start_times
+    if not isinstance(res, dict):
+        res = {"text": str(res), "summary_df": None}
 
-    if 'time_window' in params:
-        kwargs['time_window'] = time_window
-
-    # step / step_km mapping
-    if 'step_km' in params:
-        kwargs['step_km'] = step_km
-    elif 'step' in params:
-        kwargs['step'] = step_km
-
-    if 'verbose' in params:
-        kwargs['verbose'] = verbose
-
-    if 'rank_by' in params:
-        kwargs['rank_by'] = rank_by
-
-    if 'segments' in params:
-        kwargs['segments'] = segments
-
-    return _engine_analyze_overlaps(**kwargs)
+    # Enrich with meta if not present
+    meta = dict(res.get("meta", {}))
+    meta.setdefault("effective_step_km", float(step_km))
+    meta.setdefault("request_step_km", float(step_km))
+    meta.setdefault("rank_by", rank_by)
+    meta.setdefault("time_window", int(time_window))
+    meta.setdefault("samples_per_segment", _samples_per_segment(overlaps_csv, float(meta["effective_step_km"])))
+    res["meta"] = meta
+    return res

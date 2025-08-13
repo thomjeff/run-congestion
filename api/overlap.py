@@ -1,7 +1,7 @@
 import json
 import time
 from http.server import BaseHTTPRequestHandler
-from run_congestion.bridge import analyze_overlaps
+from run_congestion.engine_adapter import analyze_overlaps
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
