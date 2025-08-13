@@ -1,130 +1,159 @@
-#!/usr/bin/env python3
 # api/overlap.py
-# Ready-to-drop Vercel Python handler that appends the CLI-style footer:
-#   "ℹ️  Effective step used: X.XXX km (requested Y.YYY km)"
-# and (when verbose=true) prints samples-per-segment.
-#
-# It uses run_congestion.engine_adapter.analyze_overlaps to be compatible with
-# engines that accept either `step` or `step_km`.
-
 import json
-import os
-import sys
 import time
 from datetime import datetime, timezone
+from http import HTTPStatus
+from typing import Any, Dict, List, Optional
 
-# Prefer the adapter; fall back to engine if needed.
-try:
-    from run_congestion.engine_adapter import analyze_overlaps
-except Exception:
-    from run_congestion.engine import analyze_overlaps  # type: ignore
+from run_congestion.engine_adapter import analyze_overlaps  # normalizes to engine.analyze_overlaps
+from run_congestion.engine_adapter import parse_start_times  # if you expose it there; else inline
 
+def _json_error(msg: str, status: int = 500) -> tuple[str, int, list[tuple[str, str]]]:
+    body = json.dumps({"error": msg})
+    headers = [
+        ("Content-Type", "application/json; charset=utf-8"),
+        ("X-Robots-Tag", "noindex"),
+        ("Cache-Control", "public, max-age=0, must-revalidate"),
+    ]
+    return body, status, headers
 
-def _parse_json_body(environ) -> dict:
+def _coerce_step(payload: Dict[str, Any]) -> float:
+    # Accept both stepKm and step_km; fall back to 0.03 if missing
+    if "stepKm" in payload and isinstance(payload["stepKm"], (int, float)):
+        return float(payload["stepKm"])
+    if "step_km" in payload and isinstance(payload["step_km"], (int, float)):
+        return float(payload["step_km"])
+    return 0.03
+
+def _coerce_segments(payload: Dict[str, Any]) -> Optional[List[str]]:
+    segs = payload.get("segments")
+    if segs is None:
+        return None
+    # Ensure list[str]
+    if isinstance(segs, list):
+        return [str(s) for s in segs]
+    # Allow single string
+    if isinstance(segs, str):
+        return [segs]
+    return None
+
+def _footer_text(effective_step: float, requested_step: float, verbose: bool,
+                 samples_per_segment: Optional[Dict[str, int]]) -> str:
+    lines = []
+    lines.append("")
+    lines.append(f"ℹ️  Effective step used: {effective_step:.3f} km (requested {requested_step:.3f} km)")
+    if verbose and samples_per_segment:
+        lines.append("   Samples per segment (distance ticks):")
+        # stable order: sort by event then numeric start
+        def _parse_key(k: str):
+            # Keys look like "Event:start-end"
+            try:
+                event, rng = k.split(":", 1)
+                s, e = rng.split("-", 1)
+                return (event, float(s), float(e))
+            except Exception:
+                return (k, 0.0, 0.0)
+        for key in sorted(samples_per_segment.keys(), key=_parse_key):
+            lines.append(f"   • {key}: {samples_per_segment[key]} samples")
+    return "\n".join(lines)
+
+def handler(request, response):
+    # Minimal WSGI-like shim expected by Vercel Python runtime
     try:
-        length = int(environ.get("CONTENT_LENGTH") or "0")
-    except ValueError:
-        length = 0
-    body = sys.stdin.read(length) if length > 0 else ""
-    if not body.strip():
-        return {}
-    try:
-        return json.loads(body)
-    except json.JSONDecodeError:
-        return {}
+        t0 = time.perf_counter()
+        request_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
+        raw = request.get_data(as_text=True)  # type: ignore[attr-defined]
+        try:
+            payload = json.loads(raw) if raw else {}
+        except Exception:
+            body, status, headers = _json_error("Invalid JSON in request body", 500)
+            response.status_code = status
+            for k, v in headers:
+                response.headers[k] = v
+            response.set_data(body)
+            return
 
-def _as_bool(v, default=False):
-    if isinstance(v, bool):
-        return v
-    if isinstance(v, (int, float)):
-        return bool(v)
-    if isinstance(v, str):
-        s = v.strip().lower()
-        if s in ("1","true","yes","y","on"): return True
-        if s in ("0","false","no","n","off"): return False
-    return default
+        pace_csv = payload.get("paceCsv")
+        overlaps_csv = payload.get("overlapsCsv")
+        start_times = payload.get("startTimes", {})
+        time_window = int(payload.get("timeWindow", 60))
+        requested_step = _coerce_step(payload)
+        rank_by = str(payload.get("rankBy", "peak_ratio"))
+        verbose = bool(payload.get("verbose", False))
+        segments = _coerce_segments(payload)
 
+        if not pace_csv or not overlaps_csv:
+            body, status, headers = _json_error("Missing required fields: paceCsv and overlapsCsv", 500)
+            response.status_code = status
+            for k, v in headers:
+                response.headers[k] = v
+            response.set_data(body)
+            return
 
-def _start_response(status_code=200, headers=None):
-    # Vercel’s Python runtime reads a status line and headers
-    # terminated by a blank line, followed by the body.
-    if headers is None:
-        headers = {}
-    print(f"Status: {status_code}")
-    for k, v in headers.items():
-        print(f"{k}: {v}")
-    print("")  # end of headers
+        # Normalize startTimes (accept dict already)
+        if isinstance(start_times, dict):
+            st = {str(k): float(v) for k, v in start_times.items()}
+        else:
+            # If sent as list of "Event=Minutes" strings (rare for API), parse similarly
+            st = parse_start_times(start_times)  # type: ignore[arg-type]
 
-
-def handler(environ, start_response=_start_response):
-    t0 = time.time()
-    payload = _parse_json_body(environ)
-
-    # Inputs (accept both camelCase and snake_case for robustness)
-    pace_csv = payload.get("paceCsv") or payload.get("pace_csv")
-    overlaps_csv = payload.get("overlapsCsv") or payload.get("overlaps_csv")
-    start_times = payload.get("startTimes") or payload.get("start_times") or {}
-    time_window = int(payload.get("timeWindow") or payload.get("time_window") or 60)
-    request_step = float(payload.get("stepKm", payload.get("step_km", 0.03)))
-    verbose = _as_bool(payload.get("verbose"), False)
-    rank_by = str(payload.get("rankBy", "peak_ratio"))
-    segments = payload.get("segments")
-    if segments is not None and not isinstance(segments, list):
-        start_response(400, {"content-type": "text/plain; charset=utf-8"})
-        print('Invalid "segments": must be a list like ["10K:5.81-8.10", "Full:29.03-37.00"].')
-        return
-
-    # Call engine (adapter will map step param name and enrich meta)
-    try:
-        result = analyze_overlaps(
+        # Run analysis (adapter maps step_km -> engine's step)
+        res = analyze_overlaps(
             pace_csv=pace_csv,
             overlaps_csv=overlaps_csv,
-            start_times=start_times,
+            start_times=st,
             time_window=time_window,
-            step_km=request_step,
+            step_km=requested_step,          # adapter supports step_km
             verbose=verbose,
             rank_by=rank_by,
             segments=segments,
         )
+
+        # Expect engine/adapter to return:
+        # {
+        #   "text": "<pretty output>",
+        #   "meta": {
+        #       "effective_step": float,
+        #       "samples_per_segment": { "Event:start-end": int, ... }
+        #   }
+        # }
+        txt = str(res.get("text", ""))
+        meta = dict(res.get("meta", {}))
+        effective_step = float(meta.get("effective_step", requested_step))
+        samples_per_segment = meta.get("samples_per_segment")
+
+        # Append footer (always include effective step; include samples when verbose)
+        txt += _footer_text(effective_step, requested_step, verbose, samples_per_segment)
+
+        compute_s = time.perf_counter() - t0
+
+        # Write response
+        response.status_code = HTTPStatus.OK
+        response.headers["Content-Type"] = "text/plain; charset=utf-8"
+        response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
+        response.headers["X-Robots-Tag"] = "noindex"
+
+        # Useful diagnostics
+        response.headers["X-Request-UTC"] = request_utc
+        response.headers["X-Compute-Seconds"] = f"{compute_s:.2f}"
+        # Show the **effective** step used (not just requested)
+        response.headers["X-StepKm"] = f"{effective_step:.2f}"
+        # A quick sanity header of which events were seen (best-effort)
+        try:
+            # This mirrors what your current route prints
+            # (we don't re-parse CSVs here—just pass through if engine provided it)
+            events_seen = res.get("events_seen")
+            if isinstance(events_seen, list):
+                response.headers["X-Events-Seen"] = ",".join(events_seen)
+        except Exception:
+            pass
+
+        response.set_data(txt)
+
     except Exception as e:
-        start_response(500, {"content-type": "text/plain; charset=utf-8"})
-        print(f"Engine error: {e}")
-        return
-
-    elapsed = time.time() - t0
-
-    # Assemble body with CLI-style footer
-    text = (result or {}).get("text", "") or ""
-    meta = (result or {}).get("meta", {}) or {}
-    effective = float(meta.get("effective_step_km", request_step))
-    samples = meta.get("samples_per_segment") or {}
-
-    lines = [text, ""]
-    lines.append(f"ℹ️  Effective step used: {effective:.3f} km (requested {request_step:.3f} km)")
-    if verbose and samples:
-        lines.append("   Samples per segment (distance ticks):")
-        for seg, n in sorted(samples.items()):
-            lines.append(f"   • {seg}: {n} samples")
-
-    body = "\n".join(lines).rstrip() + "\n"
-
-    headers = {
-        "content-type": "text/plain; charset=utf-8",
-        "cache-control": "public, max-age=0, must-revalidate",
-        "x-stepkm": f"{effective:.3f}",
-        "x-request-stepkm": f"{request_step:.3f}",
-        "x-request-utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-        "x-compute-seconds": f"{elapsed:.2f}",
-        "x-robots-tag": "noindex",
-    }
-    start_response(200, headers)
-    print(body)
-
-
-def main():
-    handler(os.environ, _start_response)
-
-
-if __name__ == "__main__":
-    main()
+        body, status, headers = _json_error(str(e), 500)
+        response.status_code = status
+        for k, v in headers:
+            response.headers[k] = v
+        response.set_data(body)
