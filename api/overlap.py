@@ -43,7 +43,7 @@ class handler(BaseHTTPRequestHandler):
                 overlaps_csv=overlaps_csv,
                 start_times=start_times,
                 time_window=time_window,
-                step_km=step_km,                 # <-- pass step_km only
+                step_km=float(stepkm),                 # <-- pass step_km only
                 verbose=verbose,
                 rank_by=rank_by,
                 segments=segments,
