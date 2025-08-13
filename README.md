@@ -103,8 +103,26 @@ POST to `/api/overlap` with JSON:
 - Use `stepKm=0.03` for Vercel to avoid timeouts.
 - Adjust `coarse_factor` in code for large-scale datasets.
 
+# README deltas (minimal, surgical)
+Append a short “Telemetry & Parameters” section to your README:
+
+```markdown
+### Telemetry & Parameters (v1.1.4+)
+- **Execution time**
+  - CLI prints `⏱️ Compute time: Ns`.
+  - API returns `X-Compute-Seconds`.
+- **Step size (distance granularity)**
+  - CLI: `--step-km 0.03` (alias: `--step`).
+  - API JSON: `"stepKm": 0.03`.
+  - Lower values increase fidelity and runtime; 0.03 km is the Vercel Hobby sweet spot.
+- **Segments**
+  - Optional filter; format `"Event:start-end"`.
+  - Matching is case/whitespace-insensitive against `overlaps.csv`.
+```
+
 ## Examples
 See [examples/summary.csv](examples/summary.csv) and `templates/` for dashboards.
+
 
 ## License
 Apache-2.0 © Your Name

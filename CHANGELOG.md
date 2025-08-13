@@ -1,28 +1,28 @@
 # Changelog
 
-## v1.1.4 - 2025-08-13
-### Serverless Caching (Option A)
+## [1.1.4] — 2025-08-13
+### Added
+- Execution-time telemetry restored:
+  - **CLI** prints `⏱️ Compute time: Ns`.
+  - **API** returns `X-Compute-Seconds` response header.
 
-The `/api/overlap` endpoint now implements a cache-first strategy:
+### Changed
+- Canonicalized step size naming across stack:
+  - **CLI flag:** `--step-km` (alias `--step` retained for back-compat).
+  - **API JSON:** `stepKm`.
+  - Internals normalize to `step_km`.
+- Hardened **segments** handling:
+  - Case/whitespace-insensitive event matching.
+  - Friendly 400s listing valid segments when no match.
+- API response remains **plain text** (CLI parity) with debug headers:
+  - `X-Request-UTC`, `X-Events-Seen`, `X-StepKm`, `X-Compute-Seconds`.
 
-- **L1 in-memory cache:** per-instance, fast warm hits.
-- **Optional L2 Vercel Blob:** set `BLOB_READ_WRITE_URL` to enable cross-instance caching.
-- Cache key includes file content hashes and all relevant parameters (startTimes, timeWindow, stepKm, rankBy).
+### Fixed
+- Invocation failures caused by positional calls into `engine`; all calls are keyword-only via adapter.
+- Crash when passing a DataFrame where a CSV path was required; API now persists filtered overlaps to temp CSV before calling engine.
 
-**Response headers**
-- `X-Overlap-Cache: L1 | L2 | MISS`
-- `X-Compute-Ms: <milliseconds>`
-- `X-StepKm: <value>`
-
-Enable L2 by adding `BLOB_READ_WRITE_URL` in your Vercel Project Settings → Environment Variables.
-
-### Fixes
-- **`overlap.py`**: several patches to address incompatibility issues between CLI and JSON/POST usage. 
-- Segments normalization: trims & lowercases CSV events and your requested segment events before comparing, so 10K/10k/10K all match.
-- No positionals: Calls run_congestion.bridge.analyze_overlaps with keyword args only.
-- No DataFrame gotchas: If you request segments, it writes the filtered rows to a temp CSV and passes that path to the engine (which expects a path/URL).
-- Plain‑text output: Returns the same human‑readable block you like from the CLI, not JSON. (Error responses are JSON with an “error” key for debugging.)
-- Debug headers: X-Events-Seen, X-Request-UTC, X-StepKm so you can verify what the function read at runtime.
+### Notes
+- Vercel timeout envelope remains the gating factor; `stepKm=0.03` is the practical lower bound on the Hobby tier without background jobs.
 
 ## v1.1.3 - 2025-08-12
 ### Changed
