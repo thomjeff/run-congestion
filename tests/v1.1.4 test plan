@@ -1,0 +1,128 @@
+# Test Plan for run-congestion v1.1.4
+
+This test plan verifies the functionality of the CLI and API for `run-congestion` version 1.1.4, ensuring correct computation of overlap metrics, proper handling of edge cases, and accurate error reporting.
+
+---
+
+## 1. CLI Test Cases
+
+### 1.1 Basic CLI Run (All Segments)
+**Command:**
+```bash
+python3 -m run_congestion.cli_run_and_export   data/your_pace_data.csv   data/overlaps.csv   --start-times Full=420 10K=440 Half=460   --time-window 60   --step-km 0.01   --verbose   --export-summary summary.csv
+```
+**Expected Result:**
+- Computes overlaps for all segments in `overlaps.csv`
+- Prints detailed verbose output for each segment
+- Saves summary to `summary.csv`
+- No errors
+
+### 1.2 CLI Run (Single Segment Filter)
+**Command:**
+```bash
+python3 -m run_congestion.cli_run_and_export   data/your_pace_data.csv   data/overlaps.csv   --start-times Full=420 10K=440 Half=460   --segments "Full vs 10K 0.00km–4.25km"   --time-window 60   --step-km 0.01
+```
+**Expected Result:**
+- Only computes overlaps for the specified segment
+- Output matches API results for same input
+
+### 1.3 CLI Run (Invalid Segment Name)
+**Command:**
+```bash
+python3 -m run_congestion.cli_run_and_export   data/your_pace_data.csv   data/overlaps.csv   --start-times Full=420 10K=440 Half=460   --segments "Nonexistent Segment"
+```
+**Expected Result:**
+- CLI prints a clear error: `"No such segment in overlaps"`
+- Exit code != 0
+
+### 1.4 CLI Run (Missing File)
+**Command:**
+```bash
+python3 -m run_congestion.cli_run_and_export   missing_pace.csv   data/overlaps.csv   --start-times Full=420 10K=440 Half=460
+```
+**Expected Result:**
+- CLI prints a file not found error
+- Exit code != 0
+
+---
+
+## 2. API Test Cases
+
+### 2.1 Basic API POST (All Segments)
+**Request:**
+```bash
+curl -s -X POST "https://<vercel-app-url>/api/overlap"   -H "Content-Type: application/json"   -d '{
+    "paceCsv":"https://raw.githubusercontent.com/thomjeff/run-congestion/main/data/your_pace_data.csv",
+    "overlapsCsv":"https://raw.githubusercontent.com/thomjeff/run-congestion/main/data/overlaps.csv",
+    "startTimes":{"Full":420,"10K":440,"Half":460},
+    "timeWindow":60,
+    "stepKm":0.01,
+    "verbose":true,
+    "rankBy":"peak_ratio"
+  }'
+```
+**Expected Result:**
+- HTTP 200 OK
+- Response contains detailed segment results
+- `x-stepkm` header matches 0.01
+- `x-compute-seconds` header is present
+
+### 2.2 API POST (Single Segment)
+**Request:**
+```bash
+curl -s -X POST "https://<vercel-app-url>/api/overlap"   -H "Content-Type: application/json"   -d '{
+    "paceCsv":"https://raw.githubusercontent.com/thomjeff/run-congestion/main/data/your_pace_data.csv",
+    "overlapsCsv":"https://raw.githubusercontent.com/thomjeff/run-congestion/main/data/overlaps.csv",
+    "startTimes":{"Full":420,"10K":440,"Half":460},
+    "segments":["Full vs 10K 0.00km–4.25km"],
+    "timeWindow":60,
+    "stepKm":0.01
+  }'
+```
+**Expected Result:**
+- Only that segment is computed
+- Matches CLI results for the same input
+
+### 2.3 API POST (Invalid Segment)
+**Request:**
+```bash
+curl -s -X POST "https://<vercel-app-url>/api/overlap"   -H "Content-Type: application/json"   -d '{
+    "paceCsv":"https://raw.githubusercontent.com/thomjeff/run-congestion/main/data/your_pace_data.csv",
+    "overlapsCsv":"https://raw.githubusercontent.com/thomjeff/run-congestion/main/data/overlaps.csv",
+    "startTimes":{"Full":420,"10K":440,"Half":460},
+    "segments":["NotARealSegment"]
+  }'
+```
+**Expected Result:**
+- HTTP 400 Bad Request
+- Error message: `"No such segment in overlaps"`
+
+### 2.4 API POST (Missing paceCsv URL)
+**Request:**
+```bash
+curl -s -X POST "https://<vercel-app-url>/api/overlap"   -H "Content-Type: application/json"   -d '{
+    "overlapsCsv":"https://raw.githubusercontent.com/thomjeff/run-congestion/main/data/overlaps.csv",
+    "startTimes":{"Full":420,"10K":440,"Half":460}
+  }'
+```
+**Expected Result:**
+- HTTP 400 Bad Request
+- Error message indicating `paceCsv` is required
+
+---
+
+## 3. Performance and Consistency Checks
+
+- Run the same CLI and API tests twice and compare outputs to ensure deterministic results for identical inputs.
+- Compare CLI and API outputs for the same parameters to verify parity.
+- Measure `x-compute-seconds` in API responses to ensure performance is reasonable (under ~15s for large datasets).
+
+---
+
+## 4. Regression Coverage
+
+These tests ensure that v1.1.4 continues to support:
+- Multiple events and segments
+- Verbose output mode
+- Summary CSV export in CLI
+- Proper HTTP error codes for API
