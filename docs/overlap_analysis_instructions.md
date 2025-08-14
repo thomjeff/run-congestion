@@ -1,6 +1,10 @@
-# Overlap Analysis Instructions
+# Hardened SOP for Per-Step Overlap Analysis
 
-This document provides a **repeatable method** for generating per-step congestion tables and charts for any overlap segment using `your_pace_data.csv` and `overlaps.csv`.
+## Purpose & Parameters
+This Standard Operating Procedure (SOP) defines the hardened, repeatable process for generating per-step overlap analysis between two running events.  
+
+It ensures reproducibility, correctness, and alignment with previously validated CLI results.
+
 
 - 🔍 Checking 10K vs Half from 0.00km–2.74km...
 - 📝 Segment: Start to Friel
@@ -12,169 +16,90 @@ This document provides a **repeatable method** for generating per-step congestio
 - 🔥 **Peak congestion**: 222 total runners at best step (16 from '10K', 206 from 'Half')
 - 🔁 Unique Pairs: 1,003
 
----
 
-## **Purpose**
-To provide additional context for the Peak Cogestion information provided by the Overlap Segment analysis using the exact calculation method for specific events (e.g.: 10K vs. Half) and overlap segment (0.00–2.74 km, or 5.81–8.10 km).
-
----
-
-## **Required Data Files**
-1. `your_pace_data.csv` — contains runner pace and event type data.
-2. `overlaps.csv` — contains overlap segment start/end coordinates, event pairs, and matching logic.
-
----
-
-## **Key Parameters**
-- **Start time offsets**:
-  - 10K → `440` minutes
-  - Half → `460` minutes
-- **Step size**: `0.03 km` (~30 meters)
-- **Window size**: `60 seconds` for determining which runners are in the same step window.
-- **Count type**: **Distinct runners** per step (not interaction pairs).
-
----
-## Instruction Set (do not deviate):
-
-### 1. Data & schema (must match exactly):
-- Load `your_pace_data.csv` with columns: `event`, `runner_id`, `pace`, `distance`.
-- Load `overlaps.csv` (do not rely on it for per-step counts; only for segment metadata if needed).
-
-### 2. Computation method (engine semantics only):
-- Run per-step congestion calculation using `analyze_overlaps` logic from `overlap.py`:
-- Use the same per-step logic that matched the CLI earlier: constant pace, `start_times = {10K: 440, Half: 460}` (minutes), `step_km = 0.03`, `time_window = 60s`, distinct runner counts per step.
-- Count **unique Runner IDs** separately for Event A and Event B, then sum into `combined_runners`.
-- **Do NOT** invent/approximate alternative windowing, joining, or distance slicing.
-
-### 3. Scope for this run:
-- Events: `{Event A}` and `{Event B}` (no others).
-- Segment: `{X.XX}–{Y.YY}` km.
-
-### 4. Deliverables:
-- CSV with columns: `km`, `{EventA}_runners`, `{EventB}_runners`, `combined_runners`.
-- PNG chart with three lines: `{EventA}`, `{EventB}`, Combined.
-
-   ```python
-   import matplotlib.pyplot as plt
-
-   plt.figure(figsize=(10,5))
-   plt.plot(results_df['km'], results_df['10K_runners'], label='10K')
-   plt.plot(results_df['km'], results_df['Half_runners'], label='Half')
-   plt.plot(results_df['km'], results_df['combined_runners'], label='Combined', linewidth=2)
-   plt.xlabel("Distance (km)")
-   plt.ylabel("Runners in overlap step")
-   plt.title("Per-step congestion")
-   plt.legend()
-   plt.grid(True)
-   plt.savefig("segment_results.png", dpi=150)
-   plt.close()
-   ```
-   
-### 5. Acceptance criteria (must pass):
-- Peak (max of `combined_runners`) is plausible given staggered starts; first bins must not show full-field counts when later-starting event hasn’t arrived.
-- Report: `peak_km`, `peak_{EventA}`, `peak_{EventB}`, `peak_combined`.
-- Show the first 4 rows and the peak row inline for quick audit.
-
-### 6. File names:
-- CSV: `{EventA}_vs_{EventB}_{X.XX}_{Y.YY}km_split_counts.csv`
-- PNG: `{EventA}_vs_{EventB}_{X.XX}_{Y.YY}km_split_counts.png`
+**Default Parameters:**
+- **Start offsets:** `10K = 440 min`, `Half = 460 min`  
+- **Step size:** `0.03 km`  
+- **Window size:** `60 seconds`  
+- **Count method:** Distinct runners per step (not pairs)  
+- **Input files:**  
+  - `your_pace_data.csv` — columns: `event`, `runner_id`, `pace`, `distance`
+  - `overlaps.csv` — used for segment metadata (not for per-step counts)
 
 ---
 
-## Pre-run Checklist (echo this back before computing):
-- [ ] Found both CSVs.
-- [ ] Detected required columns in `your_pace_data.csv`: `event`, `runner_id`, `pace`, `distance`.
-- [ ] Parameters locked: `start_times={10K:440, Half:460}`, `step_km=0.03`, `time_window=60s`.
-- [ ] Events filtered to `{Event A}`, `{Event B}` only.
-- [ ] Segment bounds `{X.XX}–{Y.YY}` km.
-- [ ] Counting distinct runners per step (not pairs).
-- [ ] Will output the two files with the exact names above and print first 4 rows + peak row.
+## 🔒 Hardened, One-Shot Prompt
+
+**Instruction Set (do not deviate):**  
+1. **Data & schema (must match exactly):**  
+   - Load `your_pace_data.csv` with required columns: `event`, `runner_id`, `pace`, `distance`  
+   - Load `overlaps.csv` for segment metadata only (not per-step counts)
+
+2. **Computation method:**  
+   - Use the exact per-step logic that matched CLI earlier:  
+     `start_times = {EventA: 440, EventB: 460}`, `step_km = 0.03`, `time_window = 60s`  
+   - Count separately for Event A and Event B, then sum into `combined_runners`  
+   - **Do NOT** invent alternative windowing, joining, or slicing methods
+
+3. **Scope for the run:**  
+   - Events: `{Event A}` and `{Event B}` (no others)  
+   - Segment: `{X.XX}–{Y.YY} km`
+
+4. **Deliverables:**  
+   - CSV: `km`, `{EventA}_runners`, `{EventB}_runners`, `combined_runners`  
+   - PNG chart with three lines: `{EventA}`, `{EventB}`, `Combined`
+
+5. **Acceptance criteria:**  
+   - Peak `combined_runners` must be plausible given staggered starts  
+   - First bins must not show full-field counts if later-starting event hasn’t arrived  
+   - **If any criterion fails, STOP and show diagnostics — do not output final files**  
+   - Report: `peak_km`, `peak_{EventA}`, `peak_{EventB}`, `peak_combined`  
+   - Show first 4 rows and peak row inline
+
+6. **File naming:**  
+   - CSV: `{EventA}_vs_{EventB}_{X.XX}_{Y.YY}km_split_counts.csv`  
+   - PNG: `{EventA}_vs_{EventB}_{X.XX}_{Y.YY}km_split_counts.png`
 
 ---
 
-## Why this works (no sugar-coating)
-- The Pre-run Checklist forces me to validate schema and parameters before code. If anything’s off, I must stop and say so—no silent approximations.
-- The “Do NOT” limits block the common drift (e.g., trying to merge on overlaps.csv or using naive distance filters).
-- The Acceptance criteria give you a fast sanity check (first rows + peak row), so you don’t have to open the CSV to catch obvious nonsense.
-- Deterministic filenames remove ambiguity and make your GitHub diffs clean.
+## ✅ Pre-run Checklist (must confirm before computing)
+- [ ] Both CSVs are found  
+- [ ] Detected required columns in `your_pace_data.csv`  
+- [ ] Parameters locked: `start_times = {10K: 440, Half: 460}`, `step_km = 0.03`, `time_window = 60s`  
+- [ ] Events filtered to `{Event A}`, `{Event B}` only (exclude unrelated events like Full)  
+- [ ] Segment bounds match exactly `{X.XX}–{Y.YY} km`  
+- [ ] Counting distinct runners per step (not pairs)  
+- [ ] Output file names will match exactly the naming spec  
+- [ ] Will show first 4 rows + peak row for audit
 
 ---
 
-## Optional belt-and-suspenders (add if helpful)
-- Add an expected peak if you know it, to make it a hard gate:  
-  “Peak combined must equal 1,250 ± 0 at ~7.XX km; if not, stop and show diagnostics.”
-- Add a “re-use code” clause for absolute clarity:  
-  “Re-use the same computation path you used for 0.00–2.74 km and 5.81–8.10 km that matched the CLI; do not introduce new logic.”
-
----
-
-## TL;DR
-Adding checklist + acceptance criteria + do-not list + fixed filenames turns it into an execution-grade SOP, so you don’t have to babysit a second segment ever again.
-
----
-
-## **Quick Command Prompt**
-When asking ChatGPT to generate the same analysis, use:
-```
-# Run overlap analysis for a specific segment and two events
-# Using real computation method (matches CLI) — DO NOT approximate
-
-# === PARAMETERS (edit these before running) ===
-EVENT_A="10K"
-EVENT_B="Half"
-START_A=440       # start offset in minutes
-START_B=460       # start offset in minutes
-STEP_KM=0.03      # distance step size
-WINDOW_SEC=60     # time window in seconds
-KM_START=5.81
-KM_END=8.10
-CSV_A="your_pace_data.csv"
-CSV_B="overlaps.csv"
-
-# === EXECUTION INSTRUCTIONS ===
-# 1. Load both CSVs and confirm schema:
-#    your_pace_data.csv: event, runner_id, pace, distance
-#    overlaps.csv: used only for metadata, not counts
-# 2. Use analyze_overlaps logic:
-#    - Filter to $EVENT_A and $EVENT_B only
-#    - Apply start offsets ($START_A, $START_B)
-#    - Step through $KM_START → $KM_END in $STEP_KM increments
-#    - Count DISTINCT runners in each event within ±(WINDOW_SEC/2)
-# 3. Output:
-#    - CSV: ${EVENT_A}_vs_${EVENT_B}_${KM_START}_${KM_END}km_split_counts.csv
-#    - PNG: ${EVENT_A}_vs_${EVENT_B}_${KM_START}_${KM_END}km_split_counts.png
-# 4. Acceptance check before finalizing:
-#    - Peak combined count is plausible given staggered starts
-#    - First bins do not contain full-field counts unless both events have arrived
-#    - Print first 4 rows and peak row for verification
-
-# === EXAMPLE RUN ===
-python run_overlap_analysis.py \
-  --pace-file "$CSV_A" \
-  --overlaps-file "$CSV_B" \
-  --event-a "$EVENT_A" \
-  --event-b "$EVENT_B" \
-  --start-a "$START_A" \
-  --start-b "$START_B" \
-  --step-km "$STEP_KM" \
-  --window-sec "$WINDOW_SEC" \
-  --km-start "$KM_START" \
-  --km-end "$KM_END" \
-  --output-csv "${EVENT_A}_vs_${EVENT_B}_${KM_START}_${KM_END}km_split_counts.csv" \
-  --output-png "${EVENT_A}_vs_${EVENT_B}_${KM_START}_${KM_END}km_split_counts.png"
+## 🖥 Quick Command Prompt (copy-paste for ChatGPT)
 
 ```
-Confirm EVENT_A, EVENT_B, START_A and START_B, KM_START and KM_END values with your desired segment info.
+Using `your_pace_data.csv` and `overlaps.csv`, run the real computation method with:
+- analyze_overlaps logic
+- Start offsets: {EventA}=440 min, {EventB}=460 min
+- Step size = 0.03 km
+- Window size = 60s
+- Distinct runner counts per step
+For the segment {X.XX}–{Y.YY} km between {Event A} and {Event B}, produce:
+1. CSV table with columns: km, {EventA}_runners, {EventB}_runners, combined_runners
+2. Chart with three lines ({EventA}, {EventB}, Combined)
+```
 
 ---
 
-## **Template Output**
-- `segment_results.csv`
-- `segment_results.png`
+## Why this works
+- The **Pre-run Checklist** forces schema and parameter validation before code execution  
+- The **Do NOT** list prevents common drift from the validated method  
+- The **Acceptance criteria** act as a fast sanity check so bad outputs never go unnoticed  
+- Deterministic filenames keep GitHub diffs clean and unambiguous
 
 ---
 
-## **Notes**
-- Always filter **out unrelated events** (e.g., Full) before running the counts.
-- Ensure the segment boundaries match exactly to the values in `overlaps.csv`.
-- The method counts **presence in a slice**, not interaction pairs.
+## Optional Hard Gate
+If known, add:
+> “Peak combined must equal `{expected_value}` ± 0 at ~`{expected_km}` km; if not, stop and show diagnostics.”
+
+---
