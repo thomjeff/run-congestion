@@ -4,5 +4,15 @@ run_congestion/__pycache__/
 results/
 examples/
 .env
+<<<<<<< Updated upstream
 *.pyc
 .env
+=======
+.DS_Store
+.env
+run_congestion/__pycache__/__init__.cpython-313.pyc
+run_congestion/__pycache__/bridge.cpython-313.pyc
+run_congestion/__pycache__/cli_run_and_export.cpython-313.pyc
+run_congestion/__pycache__/engine.cpython-313.pyc
+run_congestion/__pycache__/engine_adapter.cpython-313.pyc
+>>>>>>> Stashed changes
