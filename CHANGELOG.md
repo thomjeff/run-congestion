@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.1.4] — 2025-08-14
+### Added
+- Added Execution Time to API calls
+- Hardened one-shot analysis prompt with structured checklist and acceptance criteria.
+- Pre-run checklist validation for:
+- CSV schema verification
+- Parameter lock (start times, step size, time window)
+- Event filtering
+- Segment bounds confirmation
+- Distinct-runner counting method
+- Deterministic file naming convention:
+   - {EventA}_vs_{EventB}_{X.XX}_{Y.YY}km_split_counts.csv
+   - {EventA}_vs_{EventB}_{X.XX}_{Y.YY}km_split_counts.png
+- Inline result preview: First 4 rows + peak row shown for quick sanity check.
+- Optional hard gate for expected peak congestion values.
+
+### Changed
+- Replaced ad-hoc instructions with a single execution-grade SOP.
+- Consolidated scattered notes into a unified markdown file for GitHub.
+- Simplified follow-up prompts — only event names and km range now required.
+
+### Fixed
+- Eliminated early-step full-field counts for later-starting events.
+- Prevented logic drift from reintroducing naive distance slicing or reliance on overlaps.csv for counts.
+
+## [1.1.5] — 2025-08-13
+### Added
+- Test Runner scripts
+
 ## [1.1.4] — 2025-08-13
 ### Added
 - Execution-time telemetry restored:
