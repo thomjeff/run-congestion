@@ -4,3 +4,5 @@ run_congestion/__pycache__/
 results/
 examples/
 .env
+*.pyc
+.env
