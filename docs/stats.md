@@ -89,7 +89,12 @@ This segment represents the earliest point of interaction between the 10K and Ha
 
 ---
 
-### Segment 2: 10K vs Half — 5.81–8.10 km
+### Segment 2: 10K vs Half — 5.81–8.10 km (Peak n=1,250)
+This segment occurs much later in both races, and it is where the two fields run together for a sustained distance.
+- **Start-time effect**: By this point, the 10K runners have been on course ~24–29 minutes longer than the Half runners in the overlap zone. The Half field has caught up to and merged with a much larger slice of the 10K field.
+- **Field density**: At the first step in the segment (km=5.81), 173 10K runners (≈28% of the field) are in the zone along with 886 Half runners (≈97% of that field).
+- **Dynamics**: The Half’s high density comes from the fact that the segment is still relatively early in their race (≈km 2.7–5.0 on their course). The 10K runners present here are mid- to back-pack, slower paces that maintain position in the overlap zone for longer.
+- **Interpretation**: This is a full merge, producing sustained high combined counts over multiple kilometers. Peak congestion of 1,250 runners reflects nearly the entirety of the Half field and over a third of the 10K field being co-located in the same course slice.
 
 | km | 10K_runners | Half_runners | combined_runners |
 |----|-------------|--------------|------------------|
