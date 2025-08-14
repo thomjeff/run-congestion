@@ -111,7 +111,7 @@ class handler(BaseHTTPRequestHandler):
                 overlaps_csv=overlaps_csv,
                 start_times=start_times,
                 time_window=time_window,
-                step=step,
+                step_km=step_km,
                 verbose=verbose,
                 rank_by=rank_by,
                 segments=segments,

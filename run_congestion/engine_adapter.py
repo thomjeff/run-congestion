@@ -1,27 +1,14 @@
 # run_congestion/engine_adapter.py
-from run_congestion import engine as _eng
+from run_congestion.engine import analyze_overlaps as _eng
 
-def analyze_overlaps(
-    *,
-    pace_csv,
-    overlaps_csv,
-    start_times,
-    time_window: int = 60,
-    step_km: float = 0.03,
-    verbose: bool = False,
-    rank_by: str = "peak_ratio",
-    segments=None,
-):
-    """
-    Single source of truth for parameter names used by CLI and API.
-    We only accept step_km here, and we forward it to engine as step.
-    """
-    return _eng.analyze_overlaps(
+def analyze_overlaps(*, pace_csv, overlaps_csv, start_times, time_window, step_km, verbose, rank_by, segments=None):
+    # canonical path
+    return _eng(
         pace_csv=pace_csv,
         overlaps_csv=overlaps_csv,
         start_times=start_times,
         time_window=time_window,
-        step=step_km,          # <-- engine uses 'step'
+        step_km=float(step_km),
         verbose=verbose,
         rank_by=rank_by,
         segments=segments,
