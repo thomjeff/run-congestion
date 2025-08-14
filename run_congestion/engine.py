@@ -140,7 +140,7 @@ def analyze_overlaps(
     overlaps_csv: Union[str, bytes, io.BytesIO],
     start_times: Dict[str, float],
     time_window: int = 60,
-    step_km: float = 0.03,
+    step: float = 0.03,
     verbose: bool = False,
     rank_by: str = "peak_ratio",
     segments: Optional[Sequence[str]] = None
