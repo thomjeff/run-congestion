@@ -50,6 +50,7 @@ class handler(BaseHTTPRequestHandler):
         hdrs["X-Compute-Seconds"] = f"{elapsed:.2f}"
 
         text = result.get("text", "") if isinstance(result, dict) else str(result)
+        text = f"{text}\n⏱️ Compute time: {elapsed:.2f}s"
         self.send_response(200)
         for k, v in hdrs.items():
             self.send_header(k, v)
