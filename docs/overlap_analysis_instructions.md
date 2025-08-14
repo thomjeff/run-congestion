@@ -2,10 +2,20 @@
 
 This document provides a **repeatable method** for generating per-step congestion tables and charts for any overlap segment using `your_pace_data.csv` and `overlaps.csv`.
 
+- 🔍 Checking 10K vs Half from 0.00km–2.74km...
+- 📝 Segment: Start to Friel
+- 🟦 Overlap segment: 0.00km–2.74km (Start to Friel)
+- 👥 Total in 'Half': 912 runners
+- 👥 Total in '10K': 618 runners
+- ⚠️ First overlap at 07:47:11 at 2.25km -> 10K Bib: 1617, Half Bib: 1618
+- 📈 Interaction Intensity over segment: 4,763 (cumulative overlap events)
+- 🔥 **Peak congestion**: 222 total runners at best step (16 from '10K', 206 from 'Half')
+- 🔁 Unique Pairs: 1,003
+
 ---
 
 ## **Purpose**
-To replicate the exact calculation method used for the 0.00–2.74 km and 5.81–8.10 km **10K vs Half** overlap segments.
+To provide additional context for the Peak Cogestion information provided by the Overlap Segment analysis using the exact calculation method for specific events (e.g.: 10K vs. Half) and overlap segment (0.00–2.74 km, or 5.81–8.10 km).
 
 ---
 
