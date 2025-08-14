@@ -58,7 +58,11 @@ In the `10K vs Half` segment from **5.81–8.10 km**:
 
 ## 3. Example: Per-step congestion tables
 
-### Segment 1: 10K vs Half — 0.00–2.74 km
+### Segment 1: 10K vs Half — 0.00–2.74 km (Peak n=222)
+This segment represents the earliest point of interaction between the 10K and Half Marathon fields.
+- **Start-time effect**: The 10K starts at 440 minutes, the Half at 460 minutes — a full 20 minutes later. This means the 10K field is already well into their race before the first Half runners reach this overlap zone.
+- **Field density**: Only the fastest Half runners reach this segment early enough to meet slower 10K runners. At peak (km=2.73), just 16 10K runners are present versus 206 Half runners.
+- **Interpretation**: The Half field is still tightly bunched near its front end, which is why the Half’s contribution dominates the combined total. The 10K runners in this zone are slower pace outliers still within reach of the leading Half runners. This creates a short, sharp peak in congestion — more of a “wave front” interaction than a prolonged merge.
 
 | km | 10K_runners | Half_runners | combined_runners |
 |----|-------------|--------------|------------------|
