@@ -81,8 +81,9 @@ In the `10K vs Half` segment from **5.81–8.10 km**:
 | 2.73 |                  	16 |            	206 |            	222 |
 
 **Peak congestion:** 222 total runners at km=2.73.
+Chart: `Per-step congestion (0.00–2.74 km)`
+![images/10K_Half_000_274km_split.png]
 
-Chart reference: `Per-step congestion (0.00–2.74 km).png`
 
 ---
 
