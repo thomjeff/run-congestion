@@ -1,7 +1,7 @@
 {
   "version": 2,
   "functions": {
-    "api/density.py": {
+    "api/**/*.py": {
       "runtime": "vercel-python@3.11"
     }
   },
