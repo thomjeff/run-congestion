@@ -1,6 +1,15 @@
 {
   "version": 2,
+  "functions": {
+    "api/density.py": {
+      "runtime": "python3.11"
+    }
+  },
   "routes": [
+    {
+      "src": "/api/density/health",
+      "dest": "api/density.py"
+    },
     {
       "src": "/api/density",
       "dest": "api/density.py"
